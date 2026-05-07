@@ -1,0 +1,21 @@
+# API
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic[email]
+python-jose[cryptography]
+passlib[argon2]
+
+# Queue
+celery
+redis
+
+# AI
+faster-whisper
+ctranslate2
+transformers
+sentencepiece
+
+# DB 
+sqlalchemy
+psycopg2-binary
