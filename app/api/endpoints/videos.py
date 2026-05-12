@@ -48,7 +48,7 @@ async def translate_video(
     new_translation = models.Translation(
         filename=file.filename,
         user_id=current_user.id,
-        status="pending",
+        status="PENDING",
     )
     db.add(new_translation)
     db.commit()
