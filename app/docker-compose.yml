@@ -51,9 +51,9 @@ services:
     environment:
       - VITE_API_URL=http://localhost:8000
 
-  worker-transcription:
+  audio-extraction-worker:
     build: .
-    command: celery -A worker.worker worker -Q whisper_queue
+    command: celery -A worker.worker worker -Q audio_extraction_queue
       --concurrency=1
       --loglevel=info
     env_file: .env
@@ -66,10 +66,25 @@ services:
       postgres:
         condition: service_healthy
 
-  worker-translation:
+  transcription-worker:
+    build: .
+    command: celery -A worker.worker worker -Q transcription_queue
+      --concurrency=1
+      --loglevel=info
+    env_file: .env
+    volumes:
+      - models_data:/app/ai_models
+      - storage_data:/app/storage
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  translation-worker:
     build: .
     command:
-      celery -A worker.worker worker -Q nllb_queue
+      celery -A worker.worker worker -Q translation_queue
       --concurrency=1
       --loglevel=info
       # --autoscale=2,1

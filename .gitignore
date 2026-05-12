@@ -9,5 +9,8 @@ dist/
 build/
 venv/
 .env
-backend/storage/
-backend/.dockerignore
+app/storage/
+app/.dockerignore
+videos/
+frontend/node_modules
+visuals/

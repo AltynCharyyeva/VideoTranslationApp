@@ -9,6 +9,7 @@ passlib[argon2]
 # Queue
 celery
 redis
+yt_dlp
 
 # AI
 faster-whisper
