@@ -11,4 +11,6 @@ venv/
 .env
 app/storage/
 app/.dockerignore
+videos/
+frontend/node_modules
 visuals/

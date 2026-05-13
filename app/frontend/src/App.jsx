@@ -5,24 +5,50 @@ import styles from "./style/App.module.css";
 
 function App() {
   const [view, setView] = useState("landing"); // 'landing' | 'workbench' | 'login'
-  const [videoData, setVideoData] = useState({ file: null, url: null });
+  // Updated state to handle both types
+  const [videoData, setVideoData] = useState({
+    file: null,
+    url: null,
+    isYouTube: false,
+  });
+  const [youtubeInput, setYoutubeInput] = useState("");
   const [token, setToken] = useState(localStorage.getItem("token"));
   const [initialAuthMode, setInitialAuthMode] = useState("login");
+
+  const checkAuth = () => {
+    if (!token) {
+      setInitialAuthMode("login");
+      setView("login");
+      return false;
+    }
+    return true;
+  };
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Check if user is logged in before allowing upload
-    if (!token) {
-      setInitialAuthMode("login");
-      setView("login");
-      return;
-    }
+    if (!checkAuth()) return;
 
     setVideoData({
       file: file,
       url: URL.createObjectURL(file),
+      isYouTube: false,
+    });
+
+    setView("workbench");
+  };
+
+  const handleYoutubeSubmit = (e) => {
+    e.preventDefault();
+    if (!youtubeInput.trim()) return;
+
+    if (!checkAuth()) return;
+
+    setVideoData({
+      file: null,
+      url: youtubeInput,
+      isYouTube: true,
     });
 
     setView("workbench");
@@ -88,6 +114,25 @@ function App() {
           </p>
 
           <div className={styles.uploadContainer}>
+            {/* YouTube URL Section */}
+            <form onSubmit={handleYoutubeSubmit} className={styles.youtubeForm}>
+              <input
+                type="text"
+                placeholder="Paste YouTube URL here (e.g. https://youtube.com/watch?v=...)"
+                value={youtubeInput}
+                onChange={(e) => setYoutubeInput(e.target.value)}
+                className={styles.urlInput}
+              />
+              <button type="submit" className={styles.urlSubmitBtn}>
+                Go
+              </button>
+            </form>
+
+            <div className={styles.divider}>
+              <span>OR</span>
+            </div>
+
+            {/* File Upload Section */}
             <label htmlFor="video-upload" className={styles.uploadCard}>
               <div className={styles.uploadIcon}>📤</div>
               <h3>Click to upload video</h3>
@@ -107,7 +152,10 @@ function App() {
       {view === "workbench" && (
         <VideoWorkbench
           videoData={videoData}
-          onBack={() => setView("landing")}
+          onBack={() => {
+            setYoutubeInput("");
+            setView("landing");
+          }}
         />
       )}
 
