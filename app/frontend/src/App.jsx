@@ -1,11 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import VideoWorkbench from "./VideoWorkbench";
 import Auth from "./Auth";
+import AdminPanel from "./AdminPanel"; // Assuming you named the component this
 import styles from "./style/App.module.css";
 
 function App() {
-  const [view, setView] = useState("landing"); // 'landing' | 'workbench' | 'login'
-  // Updated state to handle both types
+  const [view, setView] = useState("landing"); // 'landing' | 'workbench' | 'login' | 'admin'
   const [videoData, setVideoData] = useState({
     file: null,
     url: null,
@@ -13,7 +13,27 @@ function App() {
   });
   const [youtubeInput, setYoutubeInput] = useState("");
   const [token, setToken] = useState(localStorage.getItem("token"));
+  const [user, setUser] = useState(null);
   const [initialAuthMode, setInitialAuthMode] = useState("login");
+
+  // 1. Fetch user profile whenever the token changes
+  useEffect(() => {
+    if (token) {
+      fetch("http://localhost:8000/users/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error("Unauthorized");
+          return res.json();
+        })
+        .then((data) => setUser(data))
+        .catch(() => {
+          handleLogout();
+        });
+    } else {
+      setUser(null);
+    }
+  }, [token]);
 
   const checkAuth = () => {
     if (!token) {
@@ -24,10 +44,16 @@ function App() {
     return true;
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    setToken(null);
+    setUser(null);
+    setView("landing");
+  };
+
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     if (!checkAuth()) return;
 
     setVideoData({
@@ -35,14 +61,12 @@ function App() {
       url: URL.createObjectURL(file),
       isYouTube: false,
     });
-
     setView("workbench");
   };
 
   const handleYoutubeSubmit = (e) => {
     e.preventDefault();
     if (!youtubeInput.trim()) return;
-
     if (!checkAuth()) return;
 
     setVideoData({
@@ -50,7 +74,6 @@ function App() {
       url: youtubeInput,
       isYouTube: true,
     });
-
     setView("workbench");
   };
 
@@ -74,16 +97,20 @@ function App() {
 
         <div className={styles.navActions}>
           {token ? (
-            <button
-              className={styles.loginBtn}
-              onClick={() => {
-                localStorage.removeItem("token");
-                setToken(null);
-                setView("landing");
-              }}
-            >
-              Logout
-            </button>
+            <>
+              {/* Only show Admin button if user has admin role */}
+              {user?.role === "admin" && (
+                <button
+                  className={styles.adminBtn}
+                  onClick={() => setView("admin")}
+                >
+                  ⚙️ Manage Users
+                </button>
+              )}
+              <button className={styles.loginBtn} onClick={handleLogout}>
+                Logout
+              </button>
+            </>
           ) : (
             <>
               <button
@@ -104,6 +131,8 @@ function App() {
       </nav>
 
       {/* --- VIEW TOGGLE --- */}
+
+      {/* LANDING VIEW */}
       {view === "landing" && (
         <main className={styles.hero}>
           <h1 className={styles.appName}>
@@ -114,11 +143,10 @@ function App() {
           </p>
 
           <div className={styles.uploadContainer}>
-            {/* YouTube URL Section */}
             <form onSubmit={handleYoutubeSubmit} className={styles.youtubeForm}>
               <input
                 type="text"
-                placeholder="Paste YouTube URL here (e.g. https://youtube.com/watch?v=...)"
+                placeholder="Paste YouTube URL here..."
                 value={youtubeInput}
                 onChange={(e) => setYoutubeInput(e.target.value)}
                 className={styles.urlInput}
@@ -132,7 +160,6 @@ function App() {
               <span>OR</span>
             </div>
 
-            {/* File Upload Section */}
             <label htmlFor="video-upload" className={styles.uploadCard}>
               <div className={styles.uploadIcon}>📤</div>
               <h3>Click to upload video</h3>
@@ -149,6 +176,7 @@ function App() {
         </main>
       )}
 
+      {/* WORKBENCH VIEW */}
       {view === "workbench" && (
         <VideoWorkbench
           videoData={videoData}
@@ -159,6 +187,12 @@ function App() {
         />
       )}
 
+      {/* ADMIN VIEW */}
+      {view === "admin" && (
+        <AdminPanel token={token} onBack={() => setView("landing")} />
+      )}
+
+      {/* AUTH VIEW */}
       {view === "login" && (
         <Auth
           initialMode={initialAuthMode}

@@ -361,3 +361,68 @@
   position: relative;
   width: 100%;
 }
+
+/* Container for the form to ensure it takes up enough space */
+.youtubeForm {
+  display: flex;
+  width: 100%;
+  max-width: 800px; /* Increased width from likely 500px/600px */
+  margin: 0 auto 20px auto;
+  gap: 10px;
+}
+
+/* The actual input field */
+.urlInput {
+  flex: 1; /* Makes the input take up all available horizontal space */
+  padding: 15px 20px; /* First number is height (top/bottom), second is width (left/right) */
+  font-size: 1.1rem; /* Makes the text inside larger and easier to read */
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.3s ease;
+}
+
+.urlInput:focus {
+  border-color: #007bff; /* Highlight color when typing */
+}
+
+/* Make the button match the new height of the input */
+.urlSubmitBtn {
+  padding: 0 30px;
+  font-size: 1rem;
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+  /* ... rest of your button styles ... */
+}
+
+.statusBox {
+  margin-top: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 15px;
+  border-radius: 8px;
+  min-width: 300px;
+}
+
+.statusText {
+  font-weight: 600;
+  color: #007bff;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+}
+
+.progressBar {
+  width: 100%;
+  height: 6px;
+  background: #eee;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: #007bff;
+  transition: width 0.5s ease;
+}

@@ -9,6 +9,7 @@ const VideoWorkbench = ({ videoData, onBack }) => {
   const [subtitles, setSubtitles] = useState([]);
   const [translationId, setTranslationId] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const [backendStatus, setBackendStatus] = useState("");
 
   const activeLineRef = useRef(null);
   const playerRef = useRef(null); // Ref for both ReactPlayer and HTML5 Video
@@ -21,6 +22,16 @@ const VideoWorkbench = ({ videoData, onBack }) => {
     { code: "rus_Cyrl", name: "Russian" },
     { code: "eng_Latn", name: "English" },
   ];
+
+  const STATUS_LABELS = {
+    EXTRACTING_AUDIO: "Extracting audio track...",
+    TRANSCRIBING: "Speech-to-Text in progress...",
+    TRANSLATING: "Translating transcript...",
+    GENERATING_VOICE: "Generating AI voiceover...",
+    MIXING_VIDEO: "Syncing audio and video...",
+    COMPLETED: "Finishing up!",
+    FAILED: "Processing failed.",
+  };
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -95,7 +106,7 @@ const VideoWorkbench = ({ videoData, onBack }) => {
     }
   };
 
-  // Polling for status
+  // Update the Polling useEffect
   useEffect(() => {
     let pollInterval;
     if (status === "processing" && translationId) {
@@ -110,11 +121,14 @@ const VideoWorkbench = ({ videoData, onBack }) => {
           );
           const data = await res.json();
 
-          if (data.status?.toLowerCase() === "completed") {
+          // Capture the specific status from your backend
+          setBackendStatus(data.status);
+
+          if (data.status === "COMPLETED") {
             setSubtitles(parseSRT(data.srt_content));
             setStatus("ready");
             clearInterval(pollInterval);
-          } else if (data.status === "failed") {
+          } else if (data.status === "FAILED") {
             alert("AI Processing failed.");
             onBack();
             clearInterval(pollInterval);
@@ -193,7 +207,7 @@ const VideoWorkbench = ({ videoData, onBack }) => {
           </select>
         </div>
         <button onClick={startWorkflow} className={styles.loginBtn}>
-          Start AI Processing
+          Start translation
         </button>
         <button
           onClick={onBack}
@@ -211,13 +225,26 @@ const VideoWorkbench = ({ videoData, onBack }) => {
       <div className={styles.loaderContainer}>
         <div className={styles.spinner}></div>
         <h2>
-          {status === "uploading"
-            ? "Preparing Content..."
-            : "AI Translating..."}
+          {status === "uploading" ? "Uploading Video..." : "Processing Content"}
         </h2>
-        <p>
-          Target Language:{" "}
-          {languages.find((l) => l.code === targetLanguage)?.name}
+
+        {/* Dynamic Status Display */}
+        <div className={styles.statusBox}>
+          <p className={styles.statusText}>
+            {STATUS_LABELS[backendStatus] || "Initializing AI engine..."}
+          </p>
+          <div className={styles.progressBar}>
+            <div
+              className={styles.progressFill}
+              style={{
+                width: backendStatus === "MIXING_VIDEO" ? "80%" : "40%",
+              }}
+            ></div>
+          </div>
+        </div>
+
+        <p className={styles.langNote}>
+          Target: {languages.find((l) => l.code === targetLanguage)?.name}
         </p>
       </div>
     );

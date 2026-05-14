@@ -2,7 +2,8 @@ from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr
+from models.models import Role
 
 # ── Auth ──────────────────────────────────────────────
 class LoginRequest(BaseModel):
@@ -19,6 +20,7 @@ class TokenResponse(BaseModel):
 class BaseUser(BaseModel):
     id: UUID
     email: str
+    role: Role
     model_config = ConfigDict(from_attributes=True)
 
 

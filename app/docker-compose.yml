@@ -97,6 +97,39 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+  dubbing-worker:
+    build: .
+    command:
+      celery -A worker.worker worker -Q dubbing_queue
+      --concurrency=1
+      --loglevel=info
+      # --autoscale=2,1
+    env_file: .env
+    volumes:
+      - models_data:/app/ai_models
+      - storage_data:/app/storage
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  video-mixing-worker:
+    build: .
+    command:
+      celery -A worker.worker worker -Q video_mixing_queue
+      --concurrency=1
+      --loglevel=info
+      # --autoscale=2,1
+    env_file: .env
+    volumes:
+      - models_data:/app/ai_models
+      - storage_data:/app/storage
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
 volumes:
   rabbitmq_data:

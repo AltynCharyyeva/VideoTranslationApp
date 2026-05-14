@@ -3,7 +3,7 @@ import uuid
 import shutil
 from fastapi import APIRouter, UploadFile, HTTPException, Depends
 from sqlalchemy.orm import Session
-from core.config import UPLOADS_DIR, AUDIOS_DIR
+from core.config import UPLOADS_DIR
 from database.database import get_db
 from models import models
 from worker.tasks import extract_audio_task
@@ -93,5 +93,5 @@ async def get_status(
 
     return {
         "status": record.status,
-        "srt_content": srt_content  # This is what the frontend is looking for
+        "srt_content": srt_content
     }

@@ -11,10 +11,9 @@ from uuid import UUID
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 
-# TOKEN_BLOCKLIST: set[str] = set()
 
 # ── Config ────────────────────────────────────────────
-SECRET_KEY  = "a7ac14824c1e67ddf870c66c4addf422fecc4dd6e9cfd8aec37e98cb09866531"   # use os.environ in prod
+SECRET_KEY  = "a7ac14824c1e67ddf870c66c4addf422fecc4dd6e9cfd8aec37e98cb09866531" 
 ALGORITHM   = "HS256"
 TOKEN_EXPIRE_MINUTES = 240
 
@@ -46,12 +45,6 @@ def get_current_user(
     )
 
     token = credentials.credentials
-
-    # if token in TOKEN_BLOCKLIST:  # ← check blocklist first
-    #     raise HTTPException(
-    #         status_code=status.HTTP_401_UNAUTHORIZED,
-    #         detail="Token has been invalidated, please log in again",
-    #     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = UUID(payload.get("sub"))

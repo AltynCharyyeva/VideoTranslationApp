@@ -10,6 +10,8 @@ passlib[argon2]
 celery
 redis
 yt_dlp
+pydub
+edge_tts
 
 # AI
 faster-whisper
