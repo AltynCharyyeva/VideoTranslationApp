@@ -2,15 +2,10 @@ import os
 import json
 import yt_dlp
 import subprocess
-import edge_tts
-import asyncio
-import re
-import tempfile
-from pydub import AudioSegment
 from celery import Celery
 from database.database import update_job_status
-from services import transcribe, translate, get_voice
-from core.config import TRANSLATIONS_DIR, TRANSCRIPTIONS_DIR, AUDIOS_DIR, UPLOADS_DIR, DUBBED_AUDIOS_DIR, DUBBED_VIDEOS_DIR
+from services import transcribe, translate
+from core.config import TRANSLATIONS_DIR, TRANSCRIPTIONS_DIR, AUDIOS_DIR
 from worker.ai_models import get_whisper, get_tokenizer, get_nllb
 
 celery_app = Celery('tasks', broker=os.getenv("CELERY_BROKER_URL"))
@@ -122,9 +117,9 @@ def translate_task(job_id, target_lang):
                 "text": translation.strip()
             })
 
-        update_job_status(job_id, status="TRANSLATED", srt_path=srt_filename)
+        update_job_status(job_id, status="COMPLETED", srt_path=srt_filename)
 
-        dubbing_task.delay(job_id, target_lang, translated_segments)
+        #dubbing_task.delay(job_id, target_lang, translated_segments)
         
         print("\nTranslation completed\n")
         # return srt_filename
@@ -133,86 +128,86 @@ def translate_task(job_id, target_lang):
         raise
 
 
-@celery_app.task(queue='dubbing_queue')
-def dubbing_task(job_id, target_lang, segments):
-    return asyncio.run(run_dubbing_logic(job_id, target_lang, segments))
+# @celery_app.task(queue='dubbing_queue')
+# def dubbing_task(job_id, target_lang, segments):
+#     return asyncio.run(run_dubbing_logic(job_id, target_lang, segments))
 
 
-async def run_dubbing_logic(job_id, target_lang, segments):
-    update_job_status(job_id, status="GENERATING_VOICE")
-    combined_audio = AudioSegment.silent(duration=0)
+# async def run_dubbing_logic(job_id, target_lang, segments):
+#     update_job_status(job_id, status="GENERATING_VOICE")
+#     combined_audio = AudioSegment.silent(duration=0)
     
-    for i, seg in enumerate(segments):
-        text = seg['text'].strip()
-        text = re.sub(r'[\[\(]\d+[.:]\d{2}(?:[.:]\d{2})?[\]\)]', '', text).strip()
-        if not text:
-            continue
+#     for i, seg in enumerate(segments):
+#         text = seg['text'].strip()
+#         text = re.sub(r'[\[\(]\d+[.:]\d{2}(?:[.:]\d{2})?[\]\)]', '', text).strip()
+#         if not text:
+#             continue
         
-        start_ms = int(seg['start'] * 1000)
-        end_ms = int(seg['end'] * 1000)
-        max_duration = end_ms - start_ms
+#         start_ms = int(seg['start'] * 1000)
+#         end_ms = int(seg['end'] * 1000)
+#         max_duration = end_ms - start_ms
 
-        # 1. Generate TTS
-        temp_path = os.path.join(DUBBED_AUDIOS_DIR, f"temp_{job_id}_{i}.mp3")
-        stretched_path = os.path.join(DUBBED_AUDIOS_DIR, f"stretched_{job_id}_{i}.mp3")
-        communicate = edge_tts.Communicate(text, voice=get_voice.get_voice_for_lang(target_lang))
-        await communicate.save(temp_path)
+#         # 1. Generate TTS
+#         temp_path = os.path.join(DUBBED_AUDIOS_DIR, f"temp_{job_id}_{i}.mp3")
+#         stretched_path = os.path.join(DUBBED_AUDIOS_DIR, f"stretched_{job_id}_{i}.mp3")
+#         communicate = edge_tts.Communicate(text, voice=get_voice.get_voice_for_lang(target_lang))
+#         await communicate.save(temp_path)
         
-        # 2. Load and stretch with ffmpeg — much better quality than pydub speedup
-        segment_audio = AudioSegment.from_file(temp_path)
-        MAX_SPEED = 1.3  # Never go faster than 1.3x
+#         # 2. Load and stretch with ffmpeg — much better quality than pydub speedup
+#         segment_audio = AudioSegment.from_file(temp_path)
+#         MAX_SPEED = 1.3  # Never go faster than 1.3x
 
-        if len(segment_audio) > max_duration:
-            speed_factor = min(len(segment_audio) / max_duration, MAX_SPEED)
+#         if len(segment_audio) > max_duration:
+#             speed_factor = min(len(segment_audio) / max_duration, MAX_SPEED)
             
-            # atempo only supports 0.5–2.0, chain filters if needed
-            if speed_factor <= 2.0:
-                atempo_filter = f"atempo={speed_factor:.4f}"
-            else:
-                # Shouldn't hit this given MAX_SPEED=1.3, but just in case
-                atempo_filter = f"atempo=2.0,atempo={speed_factor/2.0:.4f}"
+#             # atempo only supports 0.5–2.0, chain filters if needed
+#             if speed_factor <= 2.0:
+#                 atempo_filter = f"atempo={speed_factor:.4f}"
+#             else:
+#                 # Shouldn't hit this given MAX_SPEED=1.3, but just in case
+#                 atempo_filter = f"atempo=2.0,atempo={speed_factor/2.0:.4f}"
 
-            subprocess.run([
-                "ffmpeg", "-y", "-i", temp_path,
-                "-filter:a", atempo_filter,
-                stretched_path
-            ], check=True, capture_output=True)
+#             subprocess.run([
+#                 "ffmpeg", "-y", "-i", temp_path,
+#                 "-filter:a", atempo_filter,
+#                 stretched_path
+#             ], check=True, capture_output=True)
             
-            segment_audio = AudioSegment.from_file(stretched_path)
+#             segment_audio = AudioSegment.from_file(stretched_path)
 
-        # 3. Absolute positioning
-        silence_needed = start_ms - len(combined_audio)
-        if silence_needed > 0:
-            combined_audio += AudioSegment.silent(duration=silence_needed)
-        else:
-            combined_audio = combined_audio[:start_ms]
+#         # 3. Absolute positioning
+#         silence_needed = start_ms - len(combined_audio)
+#         if silence_needed > 0:
+#             combined_audio += AudioSegment.silent(duration=silence_needed)
+#         else:
+#             combined_audio = combined_audio[:start_ms]
 
-        combined_audio += segment_audio
+#         combined_audio += segment_audio
         
-        # Cleanup temp files
-        for path in [temp_path, stretched_path]:
-            if os.path.exists(path):
-                os.remove(path)
+#         # Cleanup temp files
+#         for path in [temp_path, stretched_path]:
+#             if os.path.exists(path):
+#                 os.remove(path)
 
-    dub_path = os.path.join(DUBBED_AUDIOS_DIR, f"{job_id}_dubbed.mp3")
-    combined_audio.export(dub_path, format="mp3")
-    mix_video_task.delay(job_id, dub_path)
+#     dub_path = os.path.join(DUBBED_AUDIOS_DIR, f"{job_id}_dubbed.mp3")
+#     combined_audio.export(dub_path, format="mp3")
+#     mix_video_task.delay(job_id, dub_path)
 
 
-@celery_app.task(queue='video_mixing_queue')
-def mix_video_task(job_id, dubbed_audio_path):
-    update_job_status(job_id, status="MIXING_VIDEO")
+# @celery_app.task(queue='video_mixing_queue')
+# def mix_video_task(job_id, dubbed_audio_path):
+#     update_job_status(job_id, status="MIXING_VIDEO")
     
-    original_video = os.path.join(UPLOADS_DIR, f"{job_id}.mp4")
-    output_video = os.path.join(DUBBED_VIDEOS_DIR, f"{job_id}_dubbed.mp4")
+#     original_video = os.path.join(UPLOADS_DIR, f"{job_id}.mp4")
+#     output_video = os.path.join(DUBBED_VIDEOS_DIR, f"{job_id}_dubbed.mp4")
 
-    # FFmpeg command to replace audio
-    command = [
-        "ffmpeg", "-i", original_video, "-i", dubbed_audio_path,
-        "-c:v", "copy", # Don't re-encode video (fast!)
-        "-map", "0:v:0", "-map", "1:a:0", # Use video from 1st input, audio from 2nd
-        "-shortest", "-y", output_video
-    ]
+#     # FFmpeg command to replace audio
+#     command = [
+#         "ffmpeg", "-i", original_video, "-i", dubbed_audio_path,
+#         "-c:v", "copy", # Don't re-encode video (fast!)
+#         "-map", "0:v:0", "-map", "1:a:0", # Use video from 1st input, audio from 2nd
+#         "-shortest", "-y", output_video
+#     ]
     
-    subprocess.run(command, check=True)
-    update_job_status(job_id, status="COMPLETED", dubbed_video_path=output_video)
+#     subprocess.run(command, check=True)
+#     update_job_status(job_id, status="COMPLETED", dubbed_video_path=output_video)

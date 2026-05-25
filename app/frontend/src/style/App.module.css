@@ -426,3 +426,210 @@
   background: #007bff;
   transition: width 0.5s ease;
 }
+
+.modeToggleContainer {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 2rem;
+  background: #2a2a2a;
+  padding: 0.4rem;
+  border-radius: 30px;
+}
+
+.modeTab {
+  padding: 0.8rem 1.6rem;
+  border: none;
+  background: transparent;
+  color: #aaa;
+  cursor: pointer;
+  border-radius: 25px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.activeTab {
+  background: #ffffff;
+  color: #1a1a1a;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+/* --- Mode Selection View Styles --- */
+
+.modeTitle {
+  margin-bottom: 2rem;
+  color: #ffffff;
+  font-size: 1.8rem;
+  text-align: center;
+}
+
+.modeGrid {
+  display: flex;
+  gap: 2rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+
+.modeCard {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2.5rem;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: 280px;
+  transition:
+    transform 0.2s ease,
+    background-color 0.2s ease;
+  text-align: center;
+}
+
+.modeCard:hover {
+  transform: translateY(-4px) scale(1.02);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.modeCardIcon {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.modeCardTitle {
+  color: #ffffff;
+  font-size: 1.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.modeCardDescription {
+  color: #aaaaaa;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.cancelBtn {
+  background: transparent;
+  border: 1px solid #ff4a4a;
+  color: #ff4a4a;
+  padding: 0.6rem 1.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.cancelBtn:hover {
+  background-color: #ff4a4a;
+  color: #ffffff;
+}
+
+.modeToggleContainer {
+  display: flex;
+  gap: 16px;
+  margin-top: 24px;
+  justify-content: center;
+}
+
+.modeTab {
+  padding: 14px 22px;
+  border-radius: 10px;
+  border: none;
+  background: #1f2937;
+  color: white;
+  cursor: pointer;
+  font-size: 16px;
+  transition: 0.2s ease;
+}
+
+.modeTab:hover {
+  background: #374151;
+}
+
+.backBtn {
+  margin-bottom: 20px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #e5e7eb;
+}
+
+/* ─── Add these to your existing App.module.css ─── */
+
+/* Mode picker grid */
+.modeCards {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 2.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Individual mode card */
+.modeCard {
+  background: var(--card-bg, #1a1a2e);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: 1rem;
+  padding: 2rem 2.5rem;
+  width: 280px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  color: inherit;
+}
+
+.modeCard:hover {
+  transform: translateY(-4px);
+  border-color: var(--accent, #5e81f4);
+  box-shadow: 0 8px 32px rgba(94, 129, 244, 0.2);
+}
+
+.modeIcon {
+  font-size: 2.2rem;
+  line-height: 1;
+}
+
+.modeTitle {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0.2rem 0 0;
+}
+
+.modeDesc {
+  font-size: 0.875rem;
+  opacity: 0.65;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.modeCta {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent, #5e81f4);
+  margin-top: auto;
+  padding-top: 0.8rem;
+}
+
+/* Back link for the source-picker step */
+.backLink {
+  background: none;
+  border: none;
+  color: var(--accent, #5e81f4);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0;
+  margin-bottom: 1.5rem;
+  display: inline-block;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+
+.backLink:hover {
+  opacity: 1;
+}

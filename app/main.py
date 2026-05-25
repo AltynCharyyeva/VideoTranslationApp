@@ -1,31 +1,55 @@
 from fastapi import FastAPI
-from api.endpoints import videos, users, auth
+from api.endpoints import videos, users, auth, streaming
 from database.database import engine
 from database.base import Base
 from fastapi.middleware.cors import CORSMiddleware
+import asyncio
+from contextlib import asynccontextmanager
+from api.endpoints.streaming import whisper_executor, nllb_executor
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Warming up worker processes...")
+    loop = asyncio.get_event_loop()
+
+    # Warm up whisper pool (1 worker)
+    whisper_futures = [
+        loop.run_in_executor(whisper_executor, _noop)
+        for _ in range(1)
+    ]
+    # Warm up nllb pool (1 worker)
+    nllb_futures = [
+        loop.run_in_executor(nllb_executor, _noop)
+        for _ in range(1)
+    ]
+
+    await asyncio.gather(*whisper_futures, *nllb_futures)
+    print("All workers warmed up — Whisper and NLLB models loaded.")
+    yield
+
+def _noop():
+    pass
+
+app = FastAPI(title="AI Video Translator", lifespan=lifespan)
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="AI Video Translator")
-
-# Define the origins that are allowed to talk to your API
 origins = [
-    "http://localhost:3000",  # React default port
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
-    # Add your production domain here later
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,            # Allows specific origins
-    allow_credentials=True,           # Allows cookies and headers like Authorization
-    allow_methods=["*"],              # Allows all methods (GET, POST, PUT, DELETE, etc.)
-    allow_headers=["*"],              # Allows all headers
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(auth.router)
 app.include_router(videos.router)
 app.include_router(users.router)
+app.include_router(streaming.router)
 
 @app.get("/")
 async def root():

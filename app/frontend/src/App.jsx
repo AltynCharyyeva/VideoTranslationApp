@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
 import VideoWorkbench from "./VideoWorkbench";
+import StreamVideo from "./StreamVideo";
 import Auth from "./Auth";
-import AdminPanel from "./AdminPanel"; // Assuming you named the component this
+import AdminPanel from "./AdminPanel";
 import styles from "./style/App.module.css";
 
 function App() {
-  const [view, setView] = useState("landing"); // 'landing' | 'workbench' | 'login' | 'admin'
+  const [view, setView] = useState("landing"); // 'landing' | 'modeSelect' | 'workbench' | 'stream' | 'login' | 'admin'
   const [videoData, setVideoData] = useState({
     file: null,
     url: null,
@@ -16,7 +17,6 @@ function App() {
   const [user, setUser] = useState(null);
   const [initialAuthMode, setInitialAuthMode] = useState("login");
 
-  // 1. Fetch user profile whenever the token changes
   useEffect(() => {
     if (token) {
       fetch("http://localhost:8000/users/me", {
@@ -27,9 +27,7 @@ function App() {
           return res.json();
         })
         .then((data) => setUser(data))
-        .catch(() => {
-          handleLogout();
-        });
+        .catch(() => handleLogout());
     } else {
       setUser(null);
     }
@@ -51,17 +49,14 @@ function App() {
     setView("landing");
   };
 
+  // Instead of going straight to workbench, stop at mode selection
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     if (!checkAuth()) return;
 
-    setVideoData({
-      file: file,
-      url: URL.createObjectURL(file),
-      isYouTube: false,
-    });
-    setView("workbench");
+    setVideoData({ file, url: URL.createObjectURL(file), isYouTube: false });
+    setView("modeSelect");
   };
 
   const handleYoutubeSubmit = (e) => {
@@ -69,17 +64,19 @@ function App() {
     if (!youtubeInput.trim()) return;
     if (!checkAuth()) return;
 
-    setVideoData({
-      file: null,
-      url: youtubeInput,
-      isYouTube: true,
-    });
-    setView("workbench");
+    setVideoData({ file: null, url: youtubeInput, isYouTube: true });
+    setView("modeSelect");
   };
 
   const handleNavToAuth = (mode) => {
     setInitialAuthMode(mode);
     setView("login");
+  };
+
+  const handleBack = () => {
+    setYoutubeInput("");
+    setVideoData({ file: null, url: null, isYouTube: false });
+    setView("landing");
   };
 
   return (
@@ -98,7 +95,6 @@ function App() {
         <div className={styles.navActions}>
           {token ? (
             <>
-              {/* Only show Admin button if user has admin role */}
               {user?.role === "admin" && (
                 <button
                   className={styles.adminBtn}
@@ -129,8 +125,6 @@ function App() {
           )}
         </div>
       </nav>
-
-      {/* --- VIEW TOGGLE --- */}
 
       {/* LANDING VIEW */}
       {view === "landing" && (
@@ -176,15 +170,54 @@ function App() {
         </main>
       )}
 
+      {/* MODE SELECTION VIEW — shown after a file/URL is chosen */}
+      {view === "modeSelect" && (
+        <main className={styles.hero}>
+          <h2 className={styles.appName} style={{ fontSize: "2rem" }}>
+            Choose Translation Mode
+          </h2>
+          <p className={styles.tagline}>
+            {videoData.isYouTube ? videoData.url : videoData.file?.name}
+          </p>
+
+          <div className={styles.uploadContainer} style={{ gap: "1.5rem" }}>
+            {/* Real-time streaming mode */}
+            <div
+              className={styles.uploadCard}
+              onClick={() => setView("stream")}
+              style={{ cursor: "pointer" }}
+            >
+              <div className={styles.uploadIcon}>⚡</div>
+              <h3>Live Stream</h3>
+              <p>Subtitles appear in real time as the video plays</p>
+            </div>
+
+            {/* Full video translation mode */}
+            <div
+              className={styles.uploadCard}
+              onClick={() => setView("workbench")}
+              style={{ cursor: "pointer" }}
+            >
+              <div className={styles.uploadIcon}>🎬</div>
+              <h3>Full Translation</h3>
+              <p>Process the entire video first, then watch with subtitles</p>
+            </div>
+
+            <button onClick={handleBack} className={styles.loginBtn}>
+              ← Cancel
+            </button>
+          </div>
+        </main>
+      )}
+
+      {/* STREAM VIEW */}
+      {view === "stream" && (
+        <StreamVideo videoData={videoData} token={token} onBack={handleBack} />
+      )}
+
       {/* WORKBENCH VIEW */}
       {view === "workbench" && (
-        <VideoWorkbench
-          videoData={videoData}
-          onBack={() => {
-            setYoutubeInput("");
-            setView("landing");
-          }}
-        />
+        <VideoWorkbench videoData={videoData} onBack={handleBack} />
       )}
 
       {/* ADMIN VIEW */}

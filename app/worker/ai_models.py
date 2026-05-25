@@ -2,15 +2,19 @@
 import os
 from faster_whisper import WhisperModel
 import ctranslate2
-from transformers import AutoTokenizer #AutoModelForSeq2SeqLM,
+from transformers import AutoTokenizer
 from huggingface_hub import snapshot_download
 
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/app/ai_models")
 
+_whisper = None
+_tokenizer = None
+_nllb = None
+
 def load_ai_models():
     global _whisper, _tokenizer, _nllb
     _whisper = WhisperModel(
-        "tiny",
+        "base",
         device="cpu",
         compute_type="int8",
         download_root=MODEL_CACHE_DIR

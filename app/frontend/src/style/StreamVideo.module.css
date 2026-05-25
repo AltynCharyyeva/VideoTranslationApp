@@ -1,0 +1,294 @@
+/* StreamVideo.module.css */
+.workbenchWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem;
+  background-color: #1a1a1a;
+  min-height: calc(100vh - 70px);
+  color: #ffffff;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 900px;
+  margin-bottom: 1.5rem;
+  background: #2a2a2a;
+  padding: 1rem;
+  border-radius: 8px;
+}
+
+.backBtn,
+.startBtn,
+.stopBtn,
+.langSelect {
+  padding: 0.6rem 1.2rem;
+  border-radius: 6px;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.backBtn {
+  background: #444;
+  color: #fff;
+}
+.startBtn {
+  background: #007bff;
+  color: white;
+}
+.stopBtn {
+  background: #dc3545;
+  color: white;
+}
+.langSelect {
+  background: #333;
+  color: white;
+  margin-right: 1rem;
+}
+
+.statusBadge {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  border-radius: 20px;
+  font-weight: bold;
+}
+
+.CONNECTED {
+  background-color: #28a745;
+  color: white;
+}
+.DISCONNECTED {
+  background-color: #6c757d;
+  color: white;
+}
+.CONNECTING {
+  background-color: #ffc107;
+  color: #333;
+}
+
+.playerContainer {
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.videoPlayer {
+  width: 100%;
+  display: block;
+}
+
+.subtitleOverlay {
+  position: absolute;
+  bottom: 10%;
+  left: 5%;
+  right: 5%;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.75);
+  padding: 1rem;
+  border-radius: 8px;
+  pointer-events: none; /* Make sure click items on native video remain usable */
+}
+
+.srcSub {
+  font-size: 0.95rem;
+  color: #cccccc;
+  margin: 0 0 0.4rem 0;
+  font-style: italic;
+}
+
+.targetSub {
+  font-size: 1.3rem;
+  color: #ffcc00;
+  font-weight: bold;
+  margin: 0;
+}
+
+/* StreamVideo.module.css */
+
+.workbenchWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-height: 100vh;
+  background-color: #121214;
+  color: #ffffff;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 1200px;
+  margin-bottom: 24px;
+  padding: 12px 20px;
+  background-color: #1a1a1e;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.backBtn {
+  background: none;
+  border: 1px solid #3a3a40;
+  color: #e1e1e6;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.backBtn:hover {
+  background-color: #26262b;
+  border-color: #52525b;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.langSelect {
+  background-color: #26262b;
+  color: #ffffff;
+  border: 1px solid #3a3a40;
+  padding: 8px 12px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+}
+
+.langSelect:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.startBtn {
+  background-color: #00b37e;
+  color: #ffffff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.startBtn:hover {
+  background-color: #008f64;
+}
+
+.stopBtn {
+  background-color: #f75a68;
+  color: #ffffff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.stopBtn:hover {
+  background-color: #da4754;
+}
+
+.statusBadge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.DISCONNECTED {
+  background-color: #323238;
+  color: #c4c4cc;
+}
+
+.CONNECTING {
+  background-color: #fba94c;
+  color: #121214;
+}
+
+.CONNECTED {
+  background-color: #00b37e;
+  color: #121214;
+}
+
+.ERROR {
+  background-color: #f75a68;
+  color: #ffffff;
+}
+
+/* Widened Video Viewport Framework */
+.playerContainer {
+  width: 90%;
+  max-width: 1200px;
+  margin: 0 auto;
+  aspect-ratio: 16 / 9;
+  position: relative;
+  background-color: #000000;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.videoPlayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* Cinematic Subtitle Delivery Block */
+.subtitleOverlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.95) 65%,
+    rgba(0, 0, 0, 0)
+  );
+  padding: 40px 24px 24px 24px;
+  text-align: center;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.srcSub {
+  color: #e1e1e6;
+  font-size: 16px;
+  margin: 0 0 8px 0;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.targetSub {
+  color: #ffd700; /* Distinct crisp yellow accent for translations */
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+  text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.9);
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  letter-spacing: 0.3px;
+}

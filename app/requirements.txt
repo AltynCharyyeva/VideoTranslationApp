@@ -5,6 +5,8 @@ python-multipart
 pydantic[email]
 python-jose[cryptography]
 passlib[argon2]
+websockets
+numpy
 
 # Queue
 celery
