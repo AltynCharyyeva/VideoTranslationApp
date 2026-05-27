@@ -14,9 +14,6 @@ from strategies.ai_models import load_whisper_process, load_nllb_process
 router = APIRouter(prefix="/streams", tags=["streams"])
 active_streams = {}
 
-# ── Two dedicated pools — models never share memory, no contention ──
-# Whisper pool: 1 worker is enough, it uses all CPU cores internally
-# NLLB pool:    1 worker, runs concurrently with Whisper pool
 whisper_executor = ProcessPoolExecutor(max_workers=1, initializer=load_whisper_process)
 nllb_executor    = ProcessPoolExecutor(max_workers=1, initializer=load_nllb_process)
 
@@ -25,8 +22,12 @@ STRATEGY_MAP = {
     "false": UploadVideoProcessing,
 }
 
-# How many new source words trigger a translation update
-TRANSLATE_EVERY_N_WORDS = 5
+# 3 seconds of f32le PCM at 16 kHz — enough context for Whisper to be accurate
+WINDOW_BYTES  = int(3.0 * 16000 * 4)
+# 0.5 s overlap keeps words at chunk boundaries from being dropped
+OVERLAP_BYTES = int(0.5 * 16000 * 4)
+# Hard cap: if the buffer grows past 9 s we're falling behind — trim to stay live
+MAX_BUFFER_BYTES = WINDOW_BYTES * 3
 
 
 @router.websocket("/ws")
@@ -44,9 +45,9 @@ async def websocket_stream_endpoint(
     await websocket.send_json({"status": "CONNECTED", "stream_id": stream_id})
 
     strategy_class = STRATEGY_MAP.get(is_youtube.lower(), UploadVideoProcessing)
-    strategy = strategy_class(stop_event)          # no executor needed in strategy anymore
+    strategy = strategy_class(stop_event)
 
-    audio_queue  = asyncio.Queue(maxsize=10)
+    audio_queue  = asyncio.Queue(maxsize=20)
     result_queue = asyncio.Queue()
 
     # ── TASK 1: READ ──
@@ -59,7 +60,7 @@ async def websocket_stream_endpoint(
                 try:
                     audio_queue.put_nowait(chunk)
                 except asyncio.QueueFull:
-                    # Drop oldest, keep newest — prevents lag buildup
+                    # Drop the oldest queued item so the reader never blocks ffmpeg
                     try:
                         audio_queue.get_nowait()
                     except asyncio.QueueEmpty:
@@ -77,108 +78,121 @@ async def websocket_stream_endpoint(
             await audio_queue.put(None)
             stop_event.set()
 
-    # ── TASK 2: INFERENCE — two-phase, two pools ──
+    # ── TASK 2: INFERENCE — accumulate → whisper ∥ nllb ──
     async def inference_task():
         print(f"[{stream_id}] Inference started")
         loop = asyncio.get_running_loop()
 
-        # Per-stream incremental state
-        words_since_last_translation = 0
-        last_source_text = ""
-        last_translated_text = ""
+        audio_buffer: bytearray = bytearray()
+        last_source_text   = ""
+        last_translated    = ""
+        pending_nllb       = None   # asyncio.Future[str] running in nllb_executor
+
+        async def process_window(window_bytes: bytes, is_end: bool = False):
+            nonlocal last_source_text, last_translated, pending_nllb
+
+            # Submit Whisper immediately — it starts running in whisper_executor right away
+            whisper_future = loop.run_in_executor(
+                whisper_executor, run_whisper_only, window_bytes
+            )
+
+            # While Whisper runs, collect the NLLB result from the previous window.
+            # Both pools execute in parallel — awaiting one doesn't pause the other.
+            if pending_nllb is not None:
+                try:
+                    result = await pending_nllb
+                    if result:
+                        last_translated = result
+                except Exception as e:
+                    print(f"[{stream_id}] NLLB exception: {e}")
+                pending_nllb = None
+
+            whisper_result = await whisper_future
+            if not whisper_result:
+                return
+
+            source_text   = whisper_result["source_text"]
+            detected_lang = whisper_result["detected_lang"]
+            is_final      = whisper_result["is_final"] or is_end
+            last_source_text = source_text
+
+            # Push source text immediately with the last known translation — no wait
+            await result_queue.put({
+                "source_text":     source_text,
+                "translated_text": last_translated,
+                "is_final":        False,
+            })
+
+            # Launch NLLB concurrently; it will be collected on the next window
+            pending_nllb = asyncio.ensure_future(
+                loop.run_in_executor(
+                    nllb_executor, run_translation_only,
+                    source_text, detected_lang, target_lang,
+                )
+            )
+
+            if is_final:
+                # Wait for translation so the FINAL message carries the correct text
+                try:
+                    result = await pending_nllb
+                    if result:
+                        last_translated = result
+                except Exception as e:
+                    print(f"[{stream_id}] NLLB final exception: {e}")
+                pending_nllb = None
+
+                await result_queue.put({
+                    "source_text":     source_text,
+                    "translated_text": last_translated,
+                    "is_final":        True,
+                })
+                last_source_text = ""
+                last_translated  = ""
 
         try:
             while True:
-                # Drain queue — always work on freshest chunk
                 chunk = await audio_queue.get()
+
                 if chunk is None:
-                    print(f"[{stream_id}] Inference: got None sentinel, stopping")
+                    # Flush whatever remains in the buffer
+                    if len(audio_buffer) > OVERLAP_BYTES:
+                        await process_window(bytes(audio_buffer), is_end=True)
+                    elif pending_nllb is not None:
+                        try:
+                            result = await pending_nllb
+                            if result and last_source_text:
+                                last_translated = result
+                                await result_queue.put({
+                                    "source_text":     last_source_text,
+                                    "translated_text": last_translated,
+                                    "is_final":        True,
+                                })
+                        except Exception:
+                            pass
                     break
-                while not audio_queue.empty():
-                    drained = audio_queue.get_nowait()
-                    if drained is None:
-                        await result_queue.put(None)
-                        return
-                    chunk = drained
 
                 if stop_event.is_set():
                     break
 
-                pcm_bytes, timestamp = chunk
-                print(f"[{stream_id}] Inference: got chunk {len(pcm_bytes)} bytes @ {timestamp:.2f}s")
+                pcm_bytes, _ = chunk
+                audio_buffer.extend(pcm_bytes)
 
-                # ── PHASE 1: Whisper only (~200-600ms) ──
-                # Runs in whisper_executor, NLLB executor is free during this time
-                try:
-                    whisper_result = await loop.run_in_executor(
-                        whisper_executor,
-                        run_whisper_only,
-                        pcm_bytes,
-                    )
-                except Exception as e:
-                    print(f"[{stream_id}] Whisper exception: {e}")
-                    traceback.print_exc()
-                    continue
-                print(f"[{stream_id}] Whisper result: {whisper_result}")
-                
-                if not whisper_result:
-                    print(f"[{stream_id}] Whisper returned empty — skipping")
-                    continue
+                # If we're falling behind real-time, trim the oldest audio
+                if len(audio_buffer) > MAX_BUFFER_BYTES:
+                    print(f"[{stream_id}] Buffer overflow — trimming to latest window")
+                    del audio_buffer[:-WINDOW_BYTES]
 
-                source_text   = whisper_result["source_text"]
-                detected_lang = whisper_result["detected_lang"]
-                is_final      = whisper_result["is_final"]
-                last_detected_lang = detected_lang
-
-                # Count new words since last translation pass
-                current_word_count  = len(source_text.split())
-                previous_word_count = len(last_source_text.split())
-                new_words = max(current_word_count - previous_word_count, 0)
-                words_since_last_translation += new_words
-                last_source_text = source_text
-
-                # ── PHASE 2: NLLB — only when we have enough new words or sentence ends ──
-                should_translate = (
-                    words_since_last_translation >= TRANSLATE_EVERY_N_WORDS
-                    or is_final
-                    or not last_translated_text   # always translate at least once
-                )
-
-                if should_translate:
-                    # Runs in nllb_executor concurrently — whisper_executor is free
-                    try:
-                        translated = await loop.run_in_executor(
-                            nllb_executor,
-                            run_translation_only,
-                            source_text,
-                            detected_lang,
-                            target_lang,
-                        )
-                        last_translated_text = translated
-                        words_since_last_translation = 0
-                    except Exception as e:
-                        print(f"[{stream_id}] NLLB exception: {e}")
-                        traceback.print_exc()
-                        translated = last_translated_text  # fall back to last good translation
-                else:
-                    # Reuse last translation — source text updates, translation holds
-                    translated = last_translated_text
-
-                await result_queue.put({
-                    "source_text": source_text,
-                    "translated_text": translated,
-                    "is_final": is_final,
-                })
-
-                # Reset on sentence boundary
-                if is_final:
-                    last_source_text = ""
-                    last_translated_text = ""
-                    words_since_last_translation = 0
+                # Process all full windows from the buffer
+                while len(audio_buffer) >= WINDOW_BYTES:
+                    window_bytes = bytes(audio_buffer[:WINDOW_BYTES])
+                    del audio_buffer[:WINDOW_BYTES - OVERLAP_BYTES]
+                    await process_window(window_bytes)
 
         except asyncio.CancelledError:
             pass
         finally:
+            if pending_nllb is not None:
+                pending_nllb.cancel()
             print(f"[{stream_id}] Inference finished")
             await result_queue.put(None)
 
@@ -204,7 +218,7 @@ async def websocket_stream_endpoint(
                     await websocket.send_json({
                         "status": "SUBTITLE",
                         "data": {
-                            "source_text":    result.get("source_text", ""),
+                            "source_text":     result.get("source_text", ""),
                             "translated_text": result.get("translated_text", ""),
                             "is_final":        result.get("is_final", False),
                         }
@@ -223,9 +237,9 @@ async def websocket_stream_endpoint(
             print(f"[{stream_id}] Sender finished")
             stop_event.set()
 
-    reader   = asyncio.create_task(reader_task())
+    reader    = asyncio.create_task(reader_task())
     inference = asyncio.create_task(inference_task())
-    sender   = asyncio.create_task(sender_task())
+    sender    = asyncio.create_task(sender_task())
 
     try:
         await asyncio.wait_for(stop_event.wait(), timeout=3600)

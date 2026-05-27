@@ -47,11 +47,11 @@ def run_whisper_only(pcm_bytes: bytes) -> dict:
         beam_size=1,
         temperature=0.0,
         best_of=1,
-        max_new_tokens=60,
+        max_new_tokens=128,
         without_timestamps=True,
         condition_on_previous_text=False,
         vad_filter=True,
-        vad_parameters=dict(min_silence_duration_ms=300),
+        vad_parameters=dict(min_silence_duration_ms=500),
     )
     segments = list(segments)
     print(f"[whisper worker] segments={len(segments)} lang={info.language}", flush=True)

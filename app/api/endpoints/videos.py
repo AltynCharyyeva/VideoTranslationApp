@@ -11,6 +11,8 @@ from auth.dependencies import get_current_user
 from fastapi import Form, File
 from typing import Optional
 
+
+
 router = APIRouter(
     prefix="/videos",
     tags=["videos"]
@@ -69,29 +71,56 @@ async def translate_video(
         "status": "PENDING"
     }
 
+
 @router.get("/{translation_id}")
 async def get_status(
-    translation_id: uuid.UUID, 
+    translation_id: uuid.UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(get_current_user),
 ):
     record = db.query(models.Translation).filter(
-        models.Translation.id == translation_id,
-        models.Translation.user_id == current_user.id
+        models.Translation.id == str(translation_id),
+        models.Translation.user_id == current_user.id,
     ).first()
 
     if not record:
         raise HTTPException(status_code=404, detail="Translation not found")
 
-    srt_content = None
-    if record.status == "COMPLETED" and record.srt_path:
-        # Check if the file exists and read it
-        print("\n\n", record.srt_path)
-        if os.path.exists(record.srt_path):
-            with open(record.srt_path, "r", encoding="utf-8") as f:
-                srt_content = f.read()
+    # Collect every completed chunk's SRT content, ordered by chunk_index
+    completed_chunks = (
+        db.query(models.TranslationChunk)
+        .filter(
+            models.TranslationChunk.translation_id == str(translation_id),
+            models.TranslationChunk.status == "COMPLETED",
+        )
+        .order_by(models.TranslationChunk.chunk_index)
+        .all()
+    )
+
+    chunks_srt = []
+    for chunk in completed_chunks:
+        if chunk.srt_path and os.path.exists(chunk.srt_path):
+            with open(chunk.srt_path, "r", encoding="utf-8") as f:
+                chunks_srt.append({
+                    "chunk_index": chunk.chunk_index,
+                    "srt_content": f.read(),
+                })
+
+    # Total chunk count (so the frontend knows progress)
+    total_chunks = (
+        db.query(models.TranslationChunk)
+        .filter(models.TranslationChunk.translation_id == str(translation_id))
+        .count()
+    )
+
+    print(f"[STATUS] job={translation_id} status={record.status} total={total_chunks} completed={len(completed_chunks)}")
 
     return {
         "status": record.status,
-        "srt_content": srt_content
+        "total_chunks": total_chunks,
+        "completed_chunks": len(completed_chunks),
+        # Legacy flat srt_content still works — just the full merge when done
+        "srt_content": "\n".join(c["srt_content"] for c in chunks_srt) if record.status == "COMPLETED" else None,
+        # Streaming: partial chunks for progressive loading
+        "chunks": chunks_srt,
     }

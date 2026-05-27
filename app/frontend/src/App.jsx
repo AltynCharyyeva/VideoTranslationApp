@@ -6,7 +6,7 @@ import AdminPanel from "./AdminPanel";
 import styles from "./style/App.module.css";
 
 function App() {
-  const [view, setView] = useState("landing"); // 'landing' | 'modeSelect' | 'workbench' | 'stream' | 'login' | 'admin'
+  const [view, setView] = useState("landing");
   const [videoData, setVideoData] = useState({
     file: null,
     url: null,
@@ -49,7 +49,6 @@ function App() {
     setView("landing");
   };
 
-  // Instead of going straight to workbench, stop at mode selection
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -81,13 +80,8 @@ function App() {
 
   return (
     <div className={styles.pageWrapper}>
-      {/* --- TOP NAVBAR --- */}
       <nav className={styles.navbar}>
-        <div
-          className={styles.logoSection}
-          onClick={() => setView("landing")}
-          style={{ cursor: "pointer" }}
-        >
+        <div className={styles.logoSection} onClick={() => setView("landing")}>
           <span className={styles.logoIcon}>🌐</span>
           <span className={styles.logoText}>VideoTranslate</span>
         </div>
@@ -170,62 +164,52 @@ function App() {
         </main>
       )}
 
-      {/* MODE SELECTION VIEW — shown after a file/URL is chosen */}
+      {/* MODE SELECTION VIEW */}
       {view === "modeSelect" && (
         <main className={styles.hero}>
-          <h2 className={styles.appName} style={{ fontSize: "2rem" }}>
-            Choose Translation Mode
-          </h2>
+          <h2 className={styles.appName}>Choose Translation Mode</h2>
           <p className={styles.tagline}>
             {videoData.isYouTube ? videoData.url : videoData.file?.name}
           </p>
 
-          <div className={styles.uploadContainer} style={{ gap: "1.5rem" }}>
-            {/* Real-time streaming mode */}
+          <div className={styles.uploadContainer}>
             <div
               className={styles.uploadCard}
               onClick={() => setView("stream")}
-              style={{ cursor: "pointer" }}
             >
               <div className={styles.uploadIcon}>⚡</div>
               <h3>Live Stream</h3>
               <p>Subtitles appear in real time as the video plays</p>
             </div>
 
-            {/* Full video translation mode */}
             <div
               className={styles.uploadCard}
               onClick={() => setView("workbench")}
-              style={{ cursor: "pointer" }}
             >
               <div className={styles.uploadIcon}>🎬</div>
               <h3>Full Translation</h3>
-              <p>Process the entire video first, then watch with subtitles</p>
+              <p>Process the video in chunks, then watch with subtitles</p>
             </div>
 
             <button onClick={handleBack} className={styles.loginBtn}>
-              ← Cancel
+              &larr; Cancel
             </button>
           </div>
         </main>
       )}
 
-      {/* STREAM VIEW */}
       {view === "stream" && (
         <StreamVideo videoData={videoData} token={token} onBack={handleBack} />
       )}
 
-      {/* WORKBENCH VIEW */}
       {view === "workbench" && (
         <VideoWorkbench videoData={videoData} onBack={handleBack} />
       )}
 
-      {/* ADMIN VIEW */}
       {view === "admin" && (
         <AdminPanel token={token} onBack={() => setView("landing")} />
       )}
 
-      {/* AUTH VIEW */}
       {view === "login" && (
         <Auth
           initialMode={initialAuthMode}
