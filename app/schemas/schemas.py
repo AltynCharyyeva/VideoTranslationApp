@@ -51,6 +51,8 @@ class Translation(TranslationBase):
     srt_path: Optional[str] = None
     created_at: datetime
     user_id: UUID
+    source_language: Optional[str] = None
+    target_language: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

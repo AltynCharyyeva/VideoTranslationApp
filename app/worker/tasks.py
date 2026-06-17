@@ -10,6 +10,7 @@ from core.config import TRANSLATIONS_DIR, TRANSCRIPTIONS_DIR, AUDIOS_DIR, CHUNKS
 from worker.ai_models import get_whisper, get_tokenizer, get_nllb
 from database.database import create_chunk_records
 from database.database import get_chunk_statuses
+from database.database import get_chunk_srt_paths
 
 celery_app = Celery('tasks', broker=os.getenv("CELERY_BROKER_URL"))
 
@@ -152,35 +153,41 @@ def extract_audio_task(input_source, job_id, target_lang):
 
 # ─── stage 2: transcribe one chunk ──────────────────────────────────────────
 
-@celery_app.task(queue='transcription_queue')
-def transcribe_chunk_task(chunk_audio_path, job_id, chunk_id, chunk_index, time_offset, target_lang):
+@celery_app.task(queue='transcription_queue', bind=True, max_retries=3, default_retry_delay=30)
+def transcribe_chunk_task(self, chunk_audio_path, job_id, chunk_id, chunk_index, time_offset, target_lang):
     try:
         transcription_path = os.path.join(TRANSCRIPTIONS_DIR, f"{chunk_id}_transcrip.json")
 
+        detected_language = None
         if not os.path.exists(transcription_path):
-            transcribe.transcribe_audio(chunk_audio_path, chunk_id, get_whisper())
+            detected_language = transcribe.transcribe_audio(chunk_audio_path, chunk_id, get_whisper())
+            update_job_status(job_id, source_language=detected_language)
 
         update_job_status(job_id, status="TRANSLATING")
-        translate_chunk_task.delay(job_id, chunk_id, chunk_index, time_offset, target_lang)
+        translate_chunk_task.delay(job_id, chunk_id, chunk_index, time_offset, target_lang, detected_language)
+        # Audio file is no longer needed once transcription is dispatched
+        _cleanup_chunk_files(chunk_audio_path)
 
     except Exception as e:
         update_chunk_status(chunk_id, status="FAILED", error_log=str(e))
-        # If any chunk fails, mark the whole job failed
-        update_job_status(job_id, status="FAILED", error_log=f"Chunk {chunk_index} transcription failed: {str(e)}")
-        raise
+        try:
+            raise self.retry(exc=e)
+        except self.MaxRetriesExceededError:
+            update_job_status(job_id, status="FAILED", error_log=f"Chunk {chunk_index} transcription failed after retries: {str(e)}")
+            raise
 
 
 # ─── stage 3: translate one chunk ───────────────────────────────────────────
 
-@celery_app.task(queue='translation_queue')
-def translate_chunk_task(job_id, chunk_id, chunk_index, time_offset, target_lang):
+@celery_app.task(queue='translation_queue', bind=True, max_retries=3, default_retry_delay=30)
+def translate_chunk_task(self, job_id, chunk_id, chunk_index, time_offset, target_lang, source_lang=None):
     try:
         transcription_path = os.path.join(TRANSCRIPTIONS_DIR, f"{chunk_id}_transcrip.json")
         with open(transcription_path, "r", encoding="utf-8") as f:
             segments = json.load(f)
 
         translated_texts = translate.translate_segments(
-            segments, target_lang, get_tokenizer(), get_nllb()
+            segments, target_lang, get_tokenizer(), get_nllb(), source_lang
         )
 
         # Build SRT with timestamps shifted by time_offset
@@ -198,17 +205,41 @@ def translate_chunk_task(job_id, chunk_id, chunk_index, time_offset, target_lang
             f.write(srt_content)
 
         update_chunk_status(chunk_id, status="COMPLETED", srt_path=srt_path)
-
-        # Check if ALL chunks for this job are done → mark job COMPLETED
+        # Transcription JSON is no longer needed once translation is written
+        _cleanup_chunk_files(transcription_path)
         _maybe_complete_job(job_id)
 
     except Exception as e:
         update_chunk_status(chunk_id, status="FAILED", error_log=str(e))
-        update_job_status(job_id, status="FAILED", error_log=f"Chunk {chunk_index} translation failed: {str(e)}")
-        raise
+        try:
+            raise self.retry(exc=e)
+        except self.MaxRetriesExceededError:
+            update_job_status(job_id, status="FAILED", error_log=f"Chunk {chunk_index} translation failed after retries: {str(e)}")
+            raise
+
+
+def _cleanup_chunk_files(*paths: str):
+    for path in paths:
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError as e:
+                print(f"[CLEANUP] Could not remove {path}: {e}")
+
+
+def _merge_chunk_srts(job_id: str) -> str:
+    """Concatenate every chunk's SRT (in order) into one file for the whole video."""
+    merged_path = os.path.join(TRANSLATIONS_DIR, f"{job_id}_final.srt")
+    with open(merged_path, "w", encoding="utf-8") as out_file:
+        for chunk_srt_path in get_chunk_srt_paths(job_id):
+            if os.path.exists(chunk_srt_path):
+                with open(chunk_srt_path, "r", encoding="utf-8") as in_file:
+                    out_file.write(in_file.read())
+    return merged_path
 
 
 def _maybe_complete_job(job_id: str):
     statuses = get_chunk_statuses(job_id)
-    if statuses and all(s == "COMPLETED" for s in statuses):  # ← guard
-        update_job_status(job_id, status="COMPLETED")
+    if statuses and all(s == "COMPLETED" for s in statuses):
+        merged_srt_path = _merge_chunk_srts(job_id)
+        update_job_status(job_id, status="COMPLETED", srt_path=merged_srt_path)

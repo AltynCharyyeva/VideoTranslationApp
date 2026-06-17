@@ -27,9 +27,11 @@ class Translation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     filename = Column(String)
     status = Column(String, default="PENDING")
-    srt_path = Column(String) 
+    srt_path = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
     audio_path = Column(String, nullable=True)
+    source_language = Column(String, nullable=True)
+    target_language = Column(String, nullable=True)
     
     # Foreign Key linking to User
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))

@@ -38,6 +38,7 @@ services:
     env_file: .env
     volumes:
       - storage_data:/app/storage
+      - models_data:/app/ai_models
       - ./cookies.txt:/app/cookies.txt
     depends_on:
       rabbitmq:

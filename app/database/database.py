@@ -109,3 +109,15 @@ def get_chunk_statuses(job_id: str) -> list[str]:
             TranslationChunk.translation_id == uuid.UUID(job_id)
         ).all()
         return [c.status for c in chunks]
+
+
+def get_chunk_srt_paths(job_id: str) -> list[str]:
+    """Return chunk SRT file paths ordered by chunk_index, for merging into one file."""
+    with get_db_session() as db:
+        chunks = (
+            db.query(TranslationChunk)
+            .filter(TranslationChunk.translation_id == uuid.UUID(job_id))
+            .order_by(TranslationChunk.chunk_index)
+            .all()
+        )
+        return [c.srt_path for c in chunks if c.srt_path]

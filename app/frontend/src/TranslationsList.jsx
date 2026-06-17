@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import styles from "./style/Translations.module.css";
+import { getLanguageNameByNLLB, getLanguageNameByWhisper } from "./constants/languages";
 
 const TranslationsList = ({ token, onBack }) => {
   const [translations, setTranslations] = useState([]);
@@ -17,20 +18,24 @@ const TranslationsList = ({ token, onBack }) => {
       .catch(() => setLoading(false));
   }, [token]);
 
-  const downloadSRT = async (srtPath, filename) => {
+  const downloadSRT = async (translationId, filename) => {
     try {
-      // In a real app, srtPath is the URL to the file on your server
-      const response = await fetch(`http://localhost:8000/${srtPath}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await fetch(
+        `http://localhost:8000/videos/${translationId}/download/srt`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!response.ok) throw new Error("Download failed");
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
+      const safeName = filename.replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 60) || "subtitles";
       a.href = url;
-      a.download = `${filename.split(".")[0]}.srt`;
+      a.download = `${safeName}.srt`;
       document.body.appendChild(a);
       a.click();
       a.remove();
+      window.URL.revokeObjectURL(url);
     } catch (err) {
       alert("Error downloading file");
     }
@@ -61,6 +66,15 @@ const TranslationsList = ({ token, onBack }) => {
                 <span className={styles.date}>
                   {new Date(t.created_at).toLocaleDateString()}
                 </span>
+                <span className={styles.languages}>
+                  {t.source_language
+                    ? getLanguageNameByWhisper(t.source_language)
+                    : "Detecting..."}{" "}
+                  &rarr;{" "}
+                  {t.target_language
+                    ? getLanguageNameByNLLB(t.target_language)
+                    : "—"}
+                </span>
                 <div
                   className={`${styles.status} ${styles[t.status.toLowerCase()]}`}
                 >
@@ -70,7 +84,7 @@ const TranslationsList = ({ token, onBack }) => {
 
               {t.status === "COMPLETED" && t.srt_path && (
                 <button
-                  onClick={() => downloadSRT(t.srt_path, t.filename)}
+                  onClick={() => downloadSRT(t.id, t.filename)}
                   className={styles.downloadBtn}
                 >
                   Download .SRT

@@ -38,6 +38,13 @@
   color: #888;
 }
 
+.languages {
+  display: block;
+  font-size: 0.85rem;
+  color: #555;
+  margin-top: 6px;
+}
+
 .status {
   display: inline-block;
   margin-top: 10px;

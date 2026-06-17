@@ -3,6 +3,7 @@ import VideoWorkbench from "./VideoWorkbench";
 import StreamVideo from "./StreamVideo";
 import Auth from "./Auth";
 import AdminPanel from "./AdminPanel";
+import TranslationsList from "./TranslationsList";
 import styles from "./style/App.module.css";
 
 function App() {
@@ -97,6 +98,12 @@ function App() {
                   ⚙️ Manage Users
                 </button>
               )}
+              <button
+                className={styles.loginBtn}
+                onClick={() => setView("translations")}
+              >
+                My Translations
+              </button>
               <button className={styles.loginBtn} onClick={handleLogout}>
                 Logout
               </button>
@@ -208,6 +215,10 @@ function App() {
 
       {view === "admin" && (
         <AdminPanel token={token} onBack={() => setView("landing")} />
+      )}
+
+      {view === "translations" && (
+        <TranslationsList token={token} onBack={() => setView("landing")} />
       )}
 
       {view === "login" && (

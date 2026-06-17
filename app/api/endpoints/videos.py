@@ -2,6 +2,7 @@ import os
 import uuid
 import shutil
 from fastapi import APIRouter, UploadFile, HTTPException, Depends
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from core.config import UPLOADS_DIR
 from database.database import get_db
@@ -57,6 +58,7 @@ async def translate_video(
         filename=filename,
         user_id=current_user.id,
         status="PENDING",
+        target_language=target_language,
     )
     db.add(new_translation)
     db.commit()
@@ -124,3 +126,26 @@ async def get_status(
         # Streaming: partial chunks for progressive loading
         "chunks": chunks_srt,
     }
+
+
+@router.get("/{translation_id}/download/srt")
+async def download_srt(
+    translation_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    record = db.query(models.Translation).filter(
+        models.Translation.id == str(translation_id),
+        models.Translation.user_id == current_user.id,
+    ).first()
+
+    if not record:
+        raise HTTPException(status_code=404, detail="Translation not found")
+
+    if not record.srt_path or not os.path.exists(record.srt_path):
+        raise HTTPException(status_code=404, detail="Subtitle file not available")
+
+    safe_stem = "".join(c for c in (record.filename or "") if c.isalnum() or c in (" ", "-", "_")).strip()
+    download_name = f"{safe_stem[:60] or translation_id}.srt"
+
+    return FileResponse(record.srt_path, media_type="application/x-subrip", filename=download_name)

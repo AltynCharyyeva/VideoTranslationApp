@@ -10,6 +10,9 @@ const LANGUAGES = [
   { code: "tur_Latn", name: "Turkish" },
   { code: "rus_Cyrl", name: "Russian" },
   { code: "eng_Latn", name: "English" },
+  { code: "kaz_Cyrl", name: "Kazakh" },
+  { code: "uzb_Latn", name: "Uzbek" },
+  { code: "kir_Cyrl", name: "Kyrgyz" },
 ];
 
 function StreamVideo({ videoData, token, onBack }) {

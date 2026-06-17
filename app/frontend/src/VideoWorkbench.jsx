@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import ReactPlayer from "react-player/youtube";
 import styles from "./style/VideoWorkbench.module.css";
+import { LANGUAGES } from "./constants/languages";
 
 const VideoWorkbench = ({ videoData, onBack }) => {
   const [status, setStatus] = useState("idle");
@@ -13,15 +14,6 @@ const VideoWorkbench = ({ videoData, onBack }) => {
 
   const activeLineRef = useRef(null);
   const playerRef = useRef(null);
-
-  const languages = [
-    { code: "tuk_Latn", name: "Turkmen" },
-    { code: "ron_Latn", name: "Romanian" },
-    { code: "deu_Latn", name: "German" },
-    { code: "tur_Latn", name: "Turkish" },
-    { code: "rus_Cyrl", name: "Russian" },
-    { code: "eng_Latn", name: "English" },
-  ];
 
   const STATUS_LABELS = {
     PENDING: "Initializing AI engine...",
@@ -62,10 +54,7 @@ const VideoWorkbench = ({ videoData, onBack }) => {
           id: lines[0],
           start: timeToSeconds(timeMatch[1]),
           end: timeToSeconds(timeMatch[2]),
-          text: lines
-            .slice(2)
-            .join(" ")
-            .replace(/^\[\d+\.\d+\]\s*/, ""),
+          text: lines.slice(2).join(" "),
         };
       })
       .filter((s) => s !== null);
@@ -223,8 +212,8 @@ const VideoWorkbench = ({ videoData, onBack }) => {
             onChange={(e) => setTargetLanguage(e.target.value)}
             className={styles.languageSelect}
           >
-            {languages.map((lang) => (
-              <option key={lang.code} value={lang.code}>
+            {LANGUAGES.map((lang) => (
+              <option key={lang.nllb} value={lang.nllb}>
                 {lang.name}
               </option>
             ))}
