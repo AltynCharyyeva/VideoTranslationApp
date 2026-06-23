@@ -6,9 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 from contextlib import asynccontextmanager
 from api.endpoints.streaming import whisper_executor, nllb_executor
+from core.minio_client import init_bucket
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    init_bucket()
+    print("MinIO bucket ready.")
     print("Warming up worker processes...")
     loop = asyncio.get_event_loop()
 

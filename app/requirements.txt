@@ -21,6 +21,13 @@ ctranslate2
 transformers
 sentencepiece
 
-# DB 
+# Storage
+boto3
+
+# DB
 sqlalchemy
 psycopg2-binary
+
+# Test
+pytest
+pytest-timeout

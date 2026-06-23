@@ -62,7 +62,7 @@ const VideoWorkbench = ({ videoData, onBack }) => {
 
   const startWorkflow = async () => {
     setStatus("uploading");
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
 
     try {
       const formData = new FormData();
@@ -99,7 +99,7 @@ const VideoWorkbench = ({ videoData, onBack }) => {
   useEffect(() => {
     let pollInterval;
     if ((status === "processing" || status === "partial") && translationId) {
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token");
 
       pollInterval = setInterval(async () => {
         try {

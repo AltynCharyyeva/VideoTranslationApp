@@ -33,7 +33,7 @@ const Auth = ({ setToken, initialMode }) => {
 
       if (isLogin) {
         // FastAPI typically returns access_token
-        localStorage.setItem("token", data.access_token);
+        sessionStorage.setItem("token", data.access_token);
         setToken(data.access_token);
       } else {
         alert("Registration successful! Please login.");
@@ -51,13 +51,8 @@ const Auth = ({ setToken, initialMode }) => {
         <div className={styles.header}>
           <span className={styles.icon}>🌐</span>
           <h2 className={styles.title}>
-            {isLogin ? "Welcome Back" : "Create Account"}
+            {isLogin ? "Login" : "Create Account"}
           </h2>
-          <p className={styles.subtitle}>
-            {isLogin
-              ? "Enter your credentials to access your videos"
-              : "Join VideoTranslate and start breaking language barriers"}
-          </p>
         </div>
 
         <form onSubmit={handleSubmit} className={styles.form}>

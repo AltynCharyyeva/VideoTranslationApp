@@ -14,7 +14,7 @@ function App() {
     isYouTube: false,
   });
   const [youtubeInput, setYoutubeInput] = useState("");
-  const [token, setToken] = useState(localStorage.getItem("token"));
+  const [token, setToken] = useState(sessionStorage.getItem("token"));
   const [user, setUser] = useState(null);
   const [initialAuthMode, setInitialAuthMode] = useState("login");
 
@@ -44,7 +44,7 @@ function App() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
+    sessionStorage.removeItem("token");
     setToken(null);
     setUser(null);
     setView("landing");
