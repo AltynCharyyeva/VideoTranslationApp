@@ -14,9 +14,6 @@ WHISPER_TO_NLLB = {
     "nl": "nld_Latn", "pl": "pol_Latn", "uk": "ukr_Cyrl",
 }
 
-# ── PROCESS POOL FUNCTIONS ──
-# These are module-level so they're picklable.
-# Each runs in its own dedicated pool with pre-loaded models.
 
 def run_whisper_only(pcm_bytes: bytes) -> dict:
     """
@@ -59,7 +56,15 @@ def run_whisper_only(pcm_bytes: bytes) -> dict:
         print("[whisper worker] no segments returned", flush=True)
         return {}
 
-    text = " ".join(s.text for s in segments).strip()
+
+    NO_SPEECH_PROB_THRESHOLD = 0.6
+    speech_segments = [s for s in segments if s.no_speech_prob < NO_SPEECH_PROB_THRESHOLD]
+    if not speech_segments:
+        print(f"[whisper worker] all segments flagged as non-speech "
+              f"(no_speech_prob >= {NO_SPEECH_PROB_THRESHOLD})", flush=True)
+        return {}
+
+    text = " ".join(s.text for s in speech_segments).strip()
     print(f"[whisper worker] text='{text}'", flush=True)
 
     if not text or len(text.split()) < 2:
@@ -100,7 +105,7 @@ def run_translation_only(text: str, detected_lang: str, target_lang: str) -> str
         beam_size=2,
         max_decoding_length=256,
     )
-    output_tokens = result[0].hypotheses[0][1:]  # strip lang prefix token
+    output_tokens = result[0].hypotheses[0][1:]
     return tokenizer.decode(
         tokenizer.convert_tokens_to_ids(output_tokens),
         skip_special_tokens=True
@@ -114,13 +119,13 @@ class BaseVideoProcessingStrategy(ABC):
         self.stop_event = stop_event
 
     @abstractmethod
-    async def read_stream(self, source: str, websocket):
+    async def read_stream(self, source: str, websocket, start_time: float = 0.0, pause_event=None):
         pass
 
 
 class UploadVideoProcessing(BaseVideoProcessingStrategy):
 
-    async def read_stream(self, source: str, websocket):
+    async def read_stream(self, source: str, websocket, start_time: float = 0.0, pause_event=None):
         command = [
             "ffmpeg", "-i", "pipe:0",
             "-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1", "-ar", "16000",
@@ -181,17 +186,20 @@ class YouTubeVideoProcessing(BaseVideoProcessingStrategy):
 
     def _extract_live_stream_url(self, youtube_url: str) -> str:
         ydl_opts = {
-            'format': 'bestaudio/best',
+            'format': 'bestaudio[ext=m4a]/bestaudio/best',
             'quiet': True,
             'no_warnings': True,
             'cookiefile': '/app/cookies.txt',
             'format_sort': ['abr', 'asr'],
+            'extractor_args': {
+                'youtube': {'player_client': ['android', 'tv', 'web']},
+            },
         }
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(youtube_url, download=False)
             return info['url']
 
-    async def read_stream(self, source: str, websocket):
+    async def read_stream(self, source: str, websocket, start_time: float = 0.0, pause_event=None):
         if not source:
             return
 
@@ -200,8 +208,11 @@ class YouTubeVideoProcessing(BaseVideoProcessingStrategy):
             None, self._extract_live_stream_url, source
         )
 
-        ffmpeg_cmd = [
-            "ffmpeg", "-i", direct_url,
+        ffmpeg_cmd = ["ffmpeg"]
+        if start_time > 0:
+            ffmpeg_cmd += ["-ss", str(start_time)]
+        ffmpeg_cmd += [
+            "-i", direct_url,
             "-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1", "-ar", "16000",
             "pipe:1"
         ]
@@ -211,12 +222,25 @@ class YouTubeVideoProcessing(BaseVideoProcessingStrategy):
             stderr=subprocess.DEVNULL
         )
 
-        accumulated_seconds = 0.0
+
+        try:
+            await websocket.send_json({"status": "READY"})
+        except Exception:
+            pass
+
+        accumulated_seconds = start_time
         bytes_per_second = 16000 * 4
+        stream_start_wall = loop.time()
 
         try:
             while not self.stop_event.is_set():
-                # Smaller chunks = lower latency (~1s instead of ~2.5s)
+                if pause_event is not None and pause_event.is_set():
+                    pause_started = loop.time()
+                    while pause_event.is_set() and not self.stop_event.is_set():
+                        await asyncio.sleep(0.1)
+                    stream_start_wall += loop.time() - pause_started
+                    continue
+
                 chunk_bytes = await ffmpeg_process.stdout.read(64000)
                 if not chunk_bytes:
                     break
@@ -226,7 +250,12 @@ class YouTubeVideoProcessing(BaseVideoProcessingStrategy):
                 accumulated_seconds += chunk_duration
 
                 yield (chunk_bytes, timestamp)
-                await asyncio.sleep(chunk_duration * 0.8)
+
+
+                target_wall = stream_start_wall + (accumulated_seconds - start_time)
+                sleep_for = target_wall - loop.time()
+                if sleep_for > 0:
+                    await asyncio.sleep(sleep_for)
 
         except asyncio.CancelledError:
             pass

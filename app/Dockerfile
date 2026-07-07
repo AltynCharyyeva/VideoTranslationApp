@@ -11,6 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN apt-get update && apt-get install -y ffmpeg nodejs && rm -rf /var/lib/apt/lists/*
+
+# Force the latest version of yt-dlp
+RUN pip install --no-cache-dir --upgrade yt-dlp
 
 # 2. Python dependencies (all in one place)
 COPY requirements.txt .

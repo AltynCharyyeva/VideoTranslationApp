@@ -32,7 +32,6 @@ def load_nllb_process():
     )
 
 def load_ai_models():
-    """Legacy — loads both, used if you want a single pool."""
     load_whisper_process()
     load_nllb_process()
 

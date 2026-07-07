@@ -29,11 +29,7 @@ def load_ai_models():
         cache_dir=MODEL_CACHE_DIR
     )
     _nllb = ctranslate2.Translator(model_path, device="cpu")
-
-    # _nllb = AutoModelForSeq2SeqLM.from_pretrained(
-    #     "facebook/nllb-200-distilled-600M",
-    #     cache_dir=MODEL_CACHE_DIR
-    # )
+    
     print("Worker: AI models loaded.")
 
 def get_whisper():

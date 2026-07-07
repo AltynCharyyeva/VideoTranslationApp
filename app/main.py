@@ -5,22 +5,24 @@ from database.base import Base
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 from contextlib import asynccontextmanager
+from sqlalchemy import text
 from api.endpoints.streaming import whisper_executor, nllb_executor
-from core.minio_client import init_bucket
+from core.minio_client import init_bucket, set_uploads_retention
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_bucket()
+    set_uploads_retention()
     print("MinIO bucket ready.")
     print("Warming up worker processes...")
     loop = asyncio.get_event_loop()
 
-    # Warm up whisper pool (1 worker)
+    # Warm up whisper pool
     whisper_futures = [
         loop.run_in_executor(whisper_executor, _noop)
         for _ in range(1)
     ]
-    # Warm up nllb pool (1 worker)
+    # Warm up nllb pool
     nllb_futures = [
         loop.run_in_executor(nllb_executor, _noop)
         for _ in range(1)
@@ -35,6 +37,11 @@ def _noop():
 
 app = FastAPI(title="AI Video Translator", lifespan=lifespan)
 Base.metadata.create_all(bind=engine)
+
+with engine.connect() as conn:
+    conn.execute(text("ALTER TABLE translations ADD COLUMN IF NOT EXISTS source_url VARCHAR"))
+    conn.execute(text("ALTER TABLE translations ADD COLUMN IF NOT EXISTS is_youtube BOOLEAN DEFAULT FALSE NOT NULL"))
+    conn.commit()
 
 origins = [
     "http://localhost:3000",

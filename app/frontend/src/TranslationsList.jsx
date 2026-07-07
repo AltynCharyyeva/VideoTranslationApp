@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import styles from "./style/Translations.module.css";
 import { getLanguageNameByNLLB, getLanguageNameByWhisper } from "./constants/languages";
 
-const TranslationsList = ({ token, onBack }) => {
+const TranslationsList = ({ token, onBack, onReplay }) => {
   const [translations, setTranslations] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -82,13 +82,23 @@ const TranslationsList = ({ token, onBack }) => {
                 </div>
               </div>
 
-              {t.status === "COMPLETED" && t.srt_path && (
-                <button
-                  onClick={() => downloadSRT(t.id, t.filename)}
-                  className={styles.downloadBtn}
-                >
-                  Download .SRT
-                </button>
+              {t.status === "COMPLETED" && (
+                <div className={styles.actions}>
+                  {t.srt_path && (
+                    <button
+                      onClick={() => downloadSRT(t.id, t.filename)}
+                      className={styles.downloadBtn}
+                    >
+                      Download .SRT
+                    </button>
+                  )}
+                  <button
+                    onClick={() => onReplay(t)}
+                    className={styles.replayBtn}
+                  >
+                    ▶ Replay
+                  </button>
+                </div>
               )}
             </div>
           ))}

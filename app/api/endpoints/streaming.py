@@ -3,6 +3,7 @@ import asyncio
 import traceback
 from concurrent.futures import ProcessPoolExecutor
 from fastapi import APIRouter, WebSocket, Query, WebSocketDisconnect
+from fastapi import HTTPException
 from strategies.video_strategy import (
     YouTubeVideoProcessing,
     UploadVideoProcessing,
@@ -10,6 +11,8 @@ from strategies.video_strategy import (
     run_translation_only,
 )
 from strategies.ai_models import load_whisper_process, load_nllb_process
+from auth.dependencies import decode_token
+from database.database import SessionLocal
 
 router = APIRouter(prefix="/streams", tags=["streams"])
 active_streams = {}
@@ -22,11 +25,11 @@ STRATEGY_MAP = {
     "false": UploadVideoProcessing,
 }
 
-# 3 seconds of f32le PCM at 16 kHz — enough context for Whisper to be accurate
+# 3 seconds of f32le PCM at 16 kHz 
 WINDOW_BYTES  = int(3.0 * 16000 * 4)
 # 0.5 s overlap keeps words at chunk boundaries from being dropped
 OVERLAP_BYTES = int(0.5 * 16000 * 4)
-# Hard cap: if the buffer grows past 9 s we're falling behind — trim to stay live
+# If the buffer grows past 9 s we're falling behind — trim to stay live
 MAX_BUFFER_BYTES = WINDOW_BYTES * 3
 
 
@@ -34,13 +37,28 @@ MAX_BUFFER_BYTES = WINDOW_BYTES * 3
 async def websocket_stream_endpoint(
     websocket: WebSocket,
     target_lang: str = Query(...),
+    token: str = Query(...),
     is_youtube: str = Query("false"),
     source: str = None,
+    start_seconds: float = Query(0.0),
 ):
     await websocket.accept()
+
+    db = SessionLocal()
+    try:
+        decode_token(token, db)
+    except HTTPException:
+        await websocket.send_json({"status": "ERROR", "detail": "Not authenticated"})
+        await websocket.close(code=1008)
+        return
+    finally:
+        db.close()
+
     stream_id = str(uuid.uuid4())
     active_streams[stream_id] = websocket
     stop_event = asyncio.Event()
+    pause_event = asyncio.Event()
+    is_youtube_stream = is_youtube.lower() == "true"
 
     await websocket.send_json({"status": "CONNECTED", "stream_id": stream_id})
 
@@ -50,11 +68,33 @@ async def websocket_stream_endpoint(
     audio_queue  = asyncio.Queue(maxsize=20)
     result_queue = asyncio.Queue()
 
-    # ── TASK 1: READ ──
+    ###############################################################################################################
+    # CONTROL — listen for pause/resume from the YouTube player 
+    async def control_task():
+        if not is_youtube_stream:
+            return
+        print(f"[{stream_id}] Control listener started")
+        try:
+            while not stop_event.is_set():
+                msg = await websocket.receive_json()
+                control = msg.get("control")
+                if control == "PAUSE":
+                    pause_event.set()
+                elif control == "RESUME":
+                    pause_event.clear()
+        except WebSocketDisconnect:
+            print(f"[{stream_id}] Client disconnected")
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"[{stream_id}] Control task exception: {e}")
+
+    ###############################################################################################################
+    #  READ
     async def reader_task():
         print(f"[{stream_id}] Reader started")
         try:
-            async for chunk in strategy.read_stream(source, websocket):
+            async for chunk in strategy.read_stream(source, websocket, start_seconds, pause_event):
                 if stop_event.is_set():
                     break
                 try:
@@ -78,7 +118,8 @@ async def websocket_stream_endpoint(
             await audio_queue.put(None)
             stop_event.set()
 
-    # ── TASK 2: INFERENCE — accumulate → whisper ∥ nllb ──
+    ###############################################################################################################
+    #  INFERENCE: whisper to  nllb 
     async def inference_task():
         print(f"[{stream_id}] Inference started")
         loop = asyncio.get_running_loop()
@@ -86,18 +127,16 @@ async def websocket_stream_endpoint(
         audio_buffer: bytearray = bytearray()
         last_source_text   = ""
         last_translated    = ""
-        pending_nllb       = None   # asyncio.Future[str] running in nllb_executor
+        pending_nllb       = None  
 
         async def process_window(window_bytes: bytes, is_end: bool = False):
             nonlocal last_source_text, last_translated, pending_nllb
 
-            # Submit Whisper immediately — it starts running in whisper_executor right away
+            
             whisper_future = loop.run_in_executor(
                 whisper_executor, run_whisper_only, window_bytes
             )
 
-            # While Whisper runs, collect the NLLB result from the previous window.
-            # Both pools execute in parallel — awaiting one doesn't pause the other.
             if pending_nllb is not None:
                 try:
                     result = await pending_nllb
@@ -116,14 +155,14 @@ async def websocket_stream_endpoint(
             is_final      = whisper_result["is_final"] or is_end
             last_source_text = source_text
 
-            # Push source text immediately with the last known translation — no wait
+            
             await result_queue.put({
                 "source_text":     source_text,
                 "translated_text": last_translated,
                 "is_final":        False,
             })
 
-            # Launch NLLB concurrently; it will be collected on the next window
+            
             pending_nllb = asyncio.ensure_future(
                 loop.run_in_executor(
                     nllb_executor, run_translation_only,
@@ -132,7 +171,6 @@ async def websocket_stream_endpoint(
             )
 
             if is_final:
-                # Wait for translation so the FINAL message carries the correct text
                 try:
                     result = await pending_nllb
                     if result:
@@ -154,7 +192,6 @@ async def websocket_stream_endpoint(
                 chunk = await audio_queue.get()
 
                 if chunk is None:
-                    # Flush whatever remains in the buffer
                     if len(audio_buffer) > OVERLAP_BYTES:
                         await process_window(bytes(audio_buffer), is_end=True)
                     elif pending_nllb is not None:
@@ -177,12 +214,11 @@ async def websocket_stream_endpoint(
                 pcm_bytes, _ = chunk
                 audio_buffer.extend(pcm_bytes)
 
-                # If we're falling behind real-time, trim the oldest audio
+                # If we're falling behind real-time, throw the oldest audio
                 if len(audio_buffer) > MAX_BUFFER_BYTES:
                     print(f"[{stream_id}] Buffer overflow — trimming to latest window")
                     del audio_buffer[:-WINDOW_BYTES]
 
-                # Process all full windows from the buffer
                 while len(audio_buffer) >= WINDOW_BYTES:
                     window_bytes = bytes(audio_buffer[:WINDOW_BYTES])
                     del audio_buffer[:WINDOW_BYTES - OVERLAP_BYTES]
@@ -196,7 +232,8 @@ async def websocket_stream_endpoint(
             print(f"[{stream_id}] Inference finished")
             await result_queue.put(None)
 
-    # ── TASK 3: SEND ──
+    ###############################################################################################################
+    #  SEND 
     async def sender_task():
         print(f"[{stream_id}] Sender started")
         try:
@@ -224,7 +261,7 @@ async def websocket_stream_endpoint(
                         }
                     })
                     print(f"[{stream_id}] Sent ({'FINAL' if result.get('is_final') else 'interim'}): "
-                          f"{result.get('source_text', '')[:50]}")
+                          f"{result.get('translated_text', '')[:50]}")
                 except WebSocketDisconnect:
                     print(f"[{stream_id}] Sender: client disconnected")
                     break
@@ -237,6 +274,7 @@ async def websocket_stream_endpoint(
             print(f"[{stream_id}] Sender finished")
             stop_event.set()
 
+    control   = asyncio.create_task(control_task())
     reader    = asyncio.create_task(reader_task())
     inference = asyncio.create_task(inference_task())
     sender    = asyncio.create_task(sender_task())
@@ -250,10 +288,11 @@ async def websocket_stream_endpoint(
     finally:
         active_streams.pop(stream_id, None)
         stop_event.set()
+        control.cancel()
         reader.cancel()
         inference.cancel()
         sender.cancel()
-        await asyncio.gather(reader, inference, sender, return_exceptions=True)
+        await asyncio.gather(control, reader, inference, sender, return_exceptions=True)
         try:
             await websocket.close()
         except Exception:

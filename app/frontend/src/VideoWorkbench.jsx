@@ -3,11 +3,11 @@ import ReactPlayer from "react-player/youtube";
 import styles from "./style/VideoWorkbench.module.css";
 import { LANGUAGES } from "./constants/languages";
 
-const VideoWorkbench = ({ videoData, onBack }) => {
-  const [status, setStatus] = useState("idle");
-  const [targetLanguage, setTargetLanguage] = useState("tuk_Latn");
+const VideoWorkbench = ({ videoData, onBack, replayId }) => {
+  const [status, setStatus] = useState(replayId ? "replayLoading" : "idle");
+  const [targetLanguage, setTargetLanguage] = useState("");
   const [subtitles, setSubtitles] = useState([]);
-  const [translationId, setTranslationId] = useState(null);
+  const [translationId, setTranslationId] = useState(replayId || null);
   const [currentTime, setCurrentTime] = useState(0);
   const [backendStatus, setBackendStatus] = useState("");
   const [progress, setProgress] = useState({ completed: 0, total: 0 });
@@ -138,7 +138,10 @@ const VideoWorkbench = ({ videoData, onBack }) => {
             }
           }
 
-          if (data.status === "COMPLETED") {
+          const allChunksLoaded =
+            data.total_chunks > 0 && data.completed_chunks >= data.total_chunks;
+
+          if (data.status === "COMPLETED" && allChunksLoaded) {
             setStatus("ready");
             clearInterval(pollInterval);
           } else if (data.status === "FAILED") {
@@ -160,6 +163,25 @@ const VideoWorkbench = ({ videoData, onBack }) => {
     }
     return () => clearInterval(pollInterval);
   }, [status, translationId, onBack]);
+
+  // Replay mode: the job is already COMPLETED, just fetch the final SRT once.
+  useEffect(() => {
+    if (!replayId) return;
+    const token = sessionStorage.getItem("token");
+
+    fetch(`http://localhost:8000/videos/${replayId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        setSubtitles(parseSRT(data.srt_content));
+        setStatus("ready");
+      })
+      .catch(() => {
+        alert("Could not load subtitles for replay.");
+        onBack();
+      });
+  }, [replayId, onBack]);
 
   useEffect(() => {
     if (activeLineRef.current) {
@@ -197,6 +219,13 @@ const VideoWorkbench = ({ videoData, onBack }) => {
         controls
         className={styles.mainVideo}
         onTimeUpdate={() => setCurrentTime(playerRef.current?.currentTime || 0)}
+        onError={() => {
+          if (replayId) {
+            alert(
+              "This video is no longer available — uploaded videos are only kept for 7 days.",
+            );
+          }
+        }}
       />
     );
   };
@@ -212,6 +241,11 @@ const VideoWorkbench = ({ videoData, onBack }) => {
             onChange={(e) => setTargetLanguage(e.target.value)}
             className={styles.languageSelect}
           >
+            {/* 1. Add the placeholder option here */}
+            <option value="" disabled>
+              Select language
+            </option>
+
             {LANGUAGES.map((lang) => (
               <option key={lang.nllb} value={lang.nllb}>
                 {lang.name}
@@ -236,6 +270,15 @@ const VideoWorkbench = ({ videoData, onBack }) => {
       <div className={styles.loaderContainer}>
         <div className={styles.spinner}></div>
         <h2>Uploading Video...</h2>
+      </div>
+    );
+  }
+
+  if (status === "replayLoading") {
+    return (
+      <div className={styles.loaderContainer}>
+        <div className={styles.spinner}></div>
+        <h2>Loading subtitles...</h2>
       </div>
     );
   }

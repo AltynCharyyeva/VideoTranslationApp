@@ -3,6 +3,12 @@ import React, { useState, useEffect, useRef } from "react";
 import ReactPlayer from "react-player/youtube";
 import styles from "./style/StreamVideo.module.css";
 
+// Tuned to feel like YouTube's live captions: words trickle in instead of
+// the whole line appearing at once, and longer final lines stay up longer.
+const WORD_REVEAL_MS = 90;
+const MIN_CLEAR_MS = 1200;
+const CLEAR_MS_PER_WORD = 350;
+
 const LANGUAGES = [
   { code: "tuk_Latn", name: "Turkmen" },
   { code: "ron_Latn", name: "Romanian" },
@@ -11,16 +17,14 @@ const LANGUAGES = [
   { code: "rus_Cyrl", name: "Russian" },
   { code: "eng_Latn", name: "English" },
   { code: "kaz_Cyrl", name: "Kazakh" },
-  { code: "uzb_Latn", name: "Uzbek" },
+  { code: "uzn_Latn", name: "Uzbek" },
   { code: "kir_Cyrl", name: "Kyrgyz" },
 ];
 
 function StreamVideo({ videoData, token, onBack }) {
-  const [targetLang, setTargetLang] = useState("ron_Latn");
+  const [targetLang, setTargetLang] = useState("");
   const [connectionStatus, setConnectionStatus] = useState("DISCONNECTED");
   const [subtitles, setSubtitles] = useState({ original: "", translation: "" });
-  const [hasReceivedFirstSubtitle, setHasReceivedFirstSubtitle] =
-    useState(false);
 
   const playerRef = useRef(null);
   const nativeVideoRef = useRef(null); // Dedicated ref for the native local player
@@ -30,12 +34,19 @@ function StreamVideo({ videoData, token, onBack }) {
 
   // Timeout pointer to maintain readability when buffers clear
   const subtitleTimeoutRef = useRef(null);
+  // Interval pointer for the word-by-word reveal animation
+  const revealIntervalRef = useRef(null);
+  // Playback position captured on stop, so the next connect resumes here
+  const resumeTimeRef = useRef(0);
+  // True while the YouTube player is paused — gates incoming subtitles
+  const isPausedRef = useRef(false);
 
   // Clean up streaming buffers when unmounting
   useEffect(() => {
     return () => {
       stopStreamingPipeline();
       if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
+      if (revealIntervalRef.current) clearInterval(revealIntervalRef.current);
     };
   }, []);
 
@@ -48,12 +59,12 @@ function StreamVideo({ videoData, token, onBack }) {
 
   const startStreamingPipeline = () => {
     setConnectionStatus("CONNECTING");
-    setHasReceivedFirstSubtitle(false);
+    isPausedRef.current = false;
 
     const isYouTube = videoData.isYouTube;
     const encodedSource = encodeURIComponent(videoData.url);
 
-    const wsUrl = `ws://localhost:8000/streams/ws?target_lang=${targetLang}&is_youtube=${isYouTube}&source=${encodedSource}`;
+    const wsUrl = `ws://localhost:8000/streams/ws?target_lang=${targetLang}&is_youtube=${isYouTube}&source=${encodedSource}&token=${encodeURIComponent(token)}&start_seconds=${resumeTimeRef.current}`;
     wsRef.current = new WebSocket(wsUrl);
 
     wsRef.current.onopen = () => {
@@ -74,30 +85,28 @@ function StreamVideo({ videoData, token, onBack }) {
         return;
       }
 
+      // Backend signals this the moment it starts decoding YouTube audio —
+      // start the video here so it shares the same clock as the decoder,
+      // instead of waiting for the first subtitle (which is already behind).
+      if (payload.status === "READY") {
+        if (videoData.isYouTube) {
+          triggerInternalPlayback();
+        }
+        return;
+      }
+
       if (payload.status === "SUBTITLE" || payload.source_text !== undefined) {
+        // Drop captions that arrive while the player is paused, instead of
+        // letting them roll in over a frozen frame
+        if (isPausedRef.current) return;
+
         const data = payload.data || payload;
 
-        if (subtitleTimeoutRef.current)
-          clearTimeout(subtitleTimeoutRef.current);
-
-        setSubtitles({
-          original: data.source_text || "",
-          translation: data.translated_text || "",
-        });
-
-        if (data.is_final) {
-          subtitleTimeoutRef.current = setTimeout(() => {
-            setSubtitles({ original: "", translation: "" });
-          }, 3000);
-        }
-
-        setHasReceivedFirstSubtitle((alreadyReceived) => {
-          // YouTube clips can stay paused until processing registers frames
-          if (!alreadyReceived && videoData.isYouTube) {
-            triggerInternalPlayback();
-          }
-          return true;
-        });
+        revealSubtitle(
+          data.source_text || "",
+          data.translated_text || "",
+          data.is_final,
+        );
       }
     };
 
@@ -113,10 +122,58 @@ function StreamVideo({ videoData, token, onBack }) {
     };
   };
 
+  // Reveals a new caption word-by-word instead of slamming the whole line
+  // in at once, and scales the post-final readability window to sentence
+  // length instead of a flat delay.
+  const revealSubtitle = (sourceText, translatedText, isFinal) => {
+    if (revealIntervalRef.current) clearInterval(revealIntervalRef.current);
+    if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
+
+    const originalWords = sourceText ? sourceText.split(/\s+/) : [];
+    const translationWords = translatedText ? translatedText.split(/\s+/) : [];
+    const totalSteps = Math.max(
+      originalWords.length,
+      translationWords.length,
+      1,
+    );
+
+    let step = 0;
+    setSubtitles({ original: "", translation: "" });
+
+    revealIntervalRef.current = setInterval(() => {
+      step += 1;
+      setSubtitles({
+        original: originalWords.slice(0, step).join(" "),
+        translation: translationWords.slice(0, step).join(" "),
+      });
+
+      if (step >= totalSteps) {
+        clearInterval(revealIntervalRef.current);
+        revealIntervalRef.current = null;
+
+        if (isFinal) {
+          const wordCount = Math.max(
+            originalWords.length,
+            translationWords.length,
+          );
+          const delay = MIN_CLEAR_MS + wordCount * CLEAR_MS_PER_WORD;
+          subtitleTimeoutRef.current = setTimeout(() => {
+            setSubtitles({ original: "", translation: "" });
+          }, delay);
+        }
+      }
+    }, WORD_REVEAL_MS);
+  };
+
   const initLocalPipeline = () => {
     const videoElement = nativeVideoRef.current;
     if (videoElement && videoElement instanceof HTMLMediaElement) {
       setupLocalAudioCapture(videoElement);
+
+      // Resume from where streaming was last stopped, not from the start
+      if (resumeTimeRef.current > 0) {
+        videoElement.currentTime = resumeTimeRef.current;
+      }
 
       // Unmute and trigger actual playback loops now that connection is active
       videoElement.muted = false;
@@ -173,6 +230,13 @@ function StreamVideo({ videoData, token, onBack }) {
     if (videoData.isYouTube) {
       const internalPlayer = playerRef.current?.getInternalPlayer();
       if (internalPlayer && typeof internalPlayer.playVideo === "function") {
+        // Resume from where streaming was last stopped, not from the start
+        if (
+          resumeTimeRef.current > 0 &&
+          typeof internalPlayer.seekTo === "function"
+        ) {
+          internalPlayer.seekTo(resumeTimeRef.current, true);
+        }
         internalPlayer.playVideo();
       }
     } else {
@@ -185,6 +249,21 @@ function StreamVideo({ videoData, token, onBack }) {
   };
 
   const stopStreamingPipeline = () => {
+    // Capture and pause at the current position so the next connect resumes here
+    if (videoData.isYouTube) {
+      const internalPlayer = playerRef.current?.getInternalPlayer();
+      if (internalPlayer && typeof internalPlayer.pauseVideo === "function") {
+        const currentTime = playerRef.current?.getCurrentTime?.();
+        if (typeof currentTime === "number" && currentTime > 0) {
+          resumeTimeRef.current = currentTime;
+        }
+        internalPlayer.pauseVideo();
+      }
+    } else if (nativeVideoRef.current) {
+      resumeTimeRef.current = nativeVideoRef.current.currentTime || 0;
+      nativeVideoRef.current.pause();
+    }
+
     if (
       mediaRecorderRef.current &&
       mediaRecorderRef.current.state !== "inactive"
@@ -204,16 +283,16 @@ function StreamVideo({ videoData, token, onBack }) {
       } catch (e) {}
     }
     setConnectionStatus("DISCONNECTED");
-    setHasReceivedFirstSubtitle(false);
     setSubtitles({ original: "", translation: "" });
     if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
+    if (revealIntervalRef.current) clearInterval(revealIntervalRef.current);
   };
 
   return (
     <div className={styles.workbenchWrapper}>
       <header className={styles.header}>
         <button onClick={onBack} className={styles.backBtn}>
-          ⬅️ Exit Stream
+          ⬅️ Exit
         </button>
 
         <div className={styles.controls}>
@@ -223,6 +302,11 @@ function StreamVideo({ videoData, token, onBack }) {
             disabled={connectionStatus === "CONNECTED"}
             className={styles.langSelect}
           >
+            {/* 1. Add the placeholder option here */}
+            <option value="" disabled>
+              Select language
+            </option>
+
             {LANGUAGES.map((lang) => (
               <option key={lang.code} value={lang.code}>
                 {lang.name}
@@ -235,11 +319,11 @@ function StreamVideo({ videoData, token, onBack }) {
               onClick={startStreamingPipeline}
               className={styles.startBtn}
             >
-              ⚡ Connect & Stream
+              ⚡ Start
             </button>
           ) : (
             <button onClick={stopStreamingPipeline} className={styles.stopBtn}>
-              🛑 Stop Stream
+              🛑 Stop
             </button>
           )}
         </div>
@@ -258,6 +342,23 @@ function StreamVideo({ videoData, token, onBack }) {
             width="100%"
             height="100%"
             className={styles.videoPlayer}
+            onPause={() => {
+              isPausedRef.current = true;
+              if (revealIntervalRef.current)
+                clearInterval(revealIntervalRef.current);
+              if (subtitleTimeoutRef.current)
+                clearTimeout(subtitleTimeoutRef.current);
+              setSubtitles({ original: "", translation: "" });
+              if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ control: "PAUSE" }));
+              }
+            }}
+            onPlay={() => {
+              isPausedRef.current = false;
+              if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ control: "RESUME" }));
+              }
+            }}
             config={{
               youtube: {
                 playerVars: { autoplay: 0, modestbranding: 1, rel: 0 },

@@ -14,6 +14,7 @@ function App() {
     isYouTube: false,
   });
   const [youtubeInput, setYoutubeInput] = useState("");
+  const [replayId, setReplayId] = useState(null);
   const [token, setToken] = useState(sessionStorage.getItem("token"));
   const [user, setUser] = useState(null);
   const [initialAuthMode, setInitialAuthMode] = useState("login");
@@ -55,6 +56,7 @@ function App() {
     if (!file) return;
     if (!checkAuth()) return;
 
+    setReplayId(null);
     setVideoData({ file, url: URL.createObjectURL(file), isYouTube: false });
     setView("modeSelect");
   };
@@ -64,6 +66,7 @@ function App() {
     if (!youtubeInput.trim()) return;
     if (!checkAuth()) return;
 
+    setReplayId(null);
     setVideoData({ file: null, url: youtubeInput, isYouTube: true });
     setView("modeSelect");
   };
@@ -76,7 +79,18 @@ function App() {
   const handleBack = () => {
     setYoutubeInput("");
     setVideoData({ file: null, url: null, isYouTube: false });
+    setReplayId(null);
     setView("landing");
+  };
+
+  const handleReplay = (translation) => {
+    const url = translation.is_youtube
+      ? translation.source_url
+      : `http://localhost:8000/videos/${translation.id}/source?token=${encodeURIComponent(token)}`;
+
+    setVideoData({ file: null, url, isYouTube: translation.is_youtube });
+    setReplayId(translation.id);
+    setView("workbench");
   };
 
   return (
@@ -210,7 +224,11 @@ function App() {
       )}
 
       {view === "workbench" && (
-        <VideoWorkbench videoData={videoData} onBack={handleBack} />
+        <VideoWorkbench
+          videoData={videoData}
+          onBack={handleBack}
+          replayId={replayId}
+        />
       )}
 
       {view === "admin" && (
@@ -218,7 +236,11 @@ function App() {
       )}
 
       {view === "translations" && (
-        <TranslationsList token={token} onBack={() => setView("landing")} />
+        <TranslationsList
+          token={token}
+          onBack={() => setView("landing")}
+          onReplay={handleReplay}
+        />
       )}
 
       {view === "login" && (

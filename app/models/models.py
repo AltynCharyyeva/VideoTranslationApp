@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Enum as SAEnum, Float
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Enum as SAEnum, Float, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
@@ -18,7 +18,6 @@ class User(Base):
     password = Column(String, nullable=False)
     role     = Column(SAEnum(Role), default=Role.USER, nullable=False)
     
-    # Link to the Translation
     translations = relationship("Translation", back_populates="owner")
 
 class Translation(Base):
@@ -32,8 +31,10 @@ class Translation(Base):
     audio_path = Column(String, nullable=True)
     source_language = Column(String, nullable=True)
     target_language = Column(String, nullable=True)
+    source_url = Column(String, nullable=True)
+    is_youtube = Column(Boolean, default=False, nullable=False)
     
-    # Foreign Key linking to User
+    # Foreign Keys
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     owner = relationship("User", back_populates="translations")
     chunks = relationship("TranslationChunk", back_populates="translation", order_by="TranslationChunk.chunk_index")
@@ -43,10 +44,10 @@ class TranslationChunk(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     translation_id = Column(UUID(as_uuid=True), ForeignKey("translations.id"), nullable=False)
-    chunk_index = Column(Integer, nullable=False)   # 0-based order
-    status = Column(String, default="PENDING")      # PENDING | COMPLETED | FAILED
+    chunk_index = Column(Integer, nullable=False)
+    status = Column(String, default="PENDING")
     srt_path = Column(String, nullable=True)
-    time_offset = Column(Float, default=0.0)        # seconds into the original video
+    time_offset = Column(Float, default=0.0)
     error_log = Column(String, nullable=True)
 
     translation = relationship("Translation", back_populates="chunks")

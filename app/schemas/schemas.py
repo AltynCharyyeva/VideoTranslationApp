@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr
 from models.models import Role
 
-# ── Auth ──────────────────────────────────────────────
+# Auth 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
@@ -15,7 +15,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
-# ── Users ─────────────────────────────────────────────
+#  Users
 # What we send back to the USER (Includes the generated ID)
 class BaseUser(BaseModel):
     id: UUID
@@ -24,7 +24,7 @@ class BaseUser(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# What the USER sends us (No ID here!)
+# What the USER sends us
 class CreateUser(BaseModel):
     email: EmailStr
     password: str
@@ -40,11 +40,11 @@ class UpdateUser(BaseModel):
 
 
 
-# Base fields shared by all Translation schemas
+
 class TranslationBase(BaseModel):
     filename: str
 
-# What we send back to the USER
+
 class Translation(TranslationBase):
     id: UUID
     status: str
@@ -53,6 +53,8 @@ class Translation(TranslationBase):
     user_id: UUID
     source_language: Optional[str] = None
     target_language: Optional[str] = None
+    source_url: Optional[str] = None
+    is_youtube: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -12,7 +12,6 @@ from uuid import UUID
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 
 
-# ── Config ────────────────────────────────────────────
 SECRET_KEY  = "a7ac14824c1e67ddf870c66c4addf422fecc4dd6e9cfd8aec37e98cb09866531" 
 ALGORITHM   = "HS256"
 TOKEN_EXPIRE_MINUTES = 240
@@ -20,37 +19,35 @@ TOKEN_EXPIRE_MINUTES = 240
 pwd_context   = CryptContext(schemes=["argon2"], deprecated="auto")
 oauth2_scheme = HTTPBearer()
 
-# ── Password helpers ──────────────────────────────────
+
 def hash_password(plain: str) -> str:
     return pwd_context.hash(plain)
 
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
-# ── Token helpers ─────────────────────────────────────
+
 def create_access_token(data: dict) -> str:
     payload = data.copy()
     payload["exp"] = datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-# ── Core dependency: who is calling? ──────────────────
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> User:
+
+def decode_token(token: str, db: Session) -> User:
+    """Validate a raw JWT string and return the User it belongs to.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    token = credentials.credentials
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = UUID(payload.get("sub"))
         if user_id is None:
             raise credentials_exception
-    except JWTError:
+    except (JWTError, ValueError, TypeError):
         raise credentials_exception
 
     user = db.query(User).filter(User.id == user_id).first()
@@ -58,7 +55,14 @@ def get_current_user(
         raise credentials_exception
     return user
 
-# ── Role guard factory ────────────────────────────────
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    return decode_token(credentials.credentials, db)
+
+
 ROLE_RANK = {Role.USER: 1, Role.ADMIN: 2}
 
 def require_role(min_role: Role):
@@ -75,6 +79,5 @@ def require_role(min_role: Role):
         return current_user
     return guard
 
-# ── Convenience shortcuts ─────────────────────────────
-AnyUser    = Depends(get_current_user)
-AdminOnly  = Depends(require_role(Role.ADMIN))
+AnyUser = Depends(get_current_user)
+AdminOnly = Depends(require_role(Role.ADMIN))

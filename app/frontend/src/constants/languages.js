@@ -8,7 +8,7 @@ export const LANGUAGES = [
   { name: "Russian", nllb: "rus_Cyrl", whisper: "ru" },
   { name: "English", nllb: "eng_Latn", whisper: "en" },
   { name: "Kazakh", nllb: "kaz_Cyrl", whisper: "kk" },
-  { name: "Uzbek", nllb: "uzb_Latn", whisper: "uz" },
+  { name: "Uzbek", nllb: "uzn_Latn", whisper: "uz" },
   { name: "Kyrgyz", nllb: "kir_Cyrl", whisper: "ky" },
 ];
 

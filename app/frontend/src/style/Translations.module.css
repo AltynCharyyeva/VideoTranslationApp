@@ -18,7 +18,7 @@
 }
 
 .card {
-  background: #98c2ec;
+  background: #dbe7f5;
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
@@ -62,9 +62,18 @@
   background: #fef9c3;
   color: #854d0e;
 }
+.failed {
+  color: #dc2626;
+  background-color: #fee2e2;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
 
 .downloadBtn {
-  margin-top: 20px;
   padding: 10px;
   background: #007bff;
   color: white;
@@ -77,4 +86,19 @@
 
 .downloadBtn:hover {
   background: #0056b3;
+}
+
+.replayBtn {
+  padding: 10px;
+  background: #00b37e;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.replayBtn:hover {
+  background: #008f64;
 }

@@ -47,8 +47,3 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
 
     token = create_access_token({"sub": str(user.id), "role": user.role})
     return {"access_token": token, "token_type": "bearer"}
-
-# @router.post("/logout", status_code=status.HTTP_200_OK)
-# def logout(token: str = Depends(oauth2_scheme)):
-#     TOKEN_BLOCKLIST.add(token)
-#     return {"message": "Logged out successfully"}

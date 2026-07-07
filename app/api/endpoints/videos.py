@@ -1,12 +1,14 @@
+import mimetypes
 import os
 import uuid
-from fastapi import APIRouter, UploadFile, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, HTTPException, Depends, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from database.database import get_db
 from models import models
 from worker.tasks import extract_audio_task
-from auth.dependencies import get_current_user
+from auth.dependencies import get_current_user, decode_token
+from database.database import SessionLocal
 from fastapi import Form, File
 from typing import Optional
 from core import minio_client
@@ -50,6 +52,8 @@ async def translate_video(
         user_id=current_user.id,
         status="PENDING",
         target_language=target_language,
+        source_url=input_source,
+        is_youtube=bool(youtube_url),
     )
     db.add(new_translation)
     db.commit()
@@ -73,35 +77,32 @@ async def get_status(
     if not record:
         raise HTTPException(status_code=404, detail="Translation not found")
 
-    completed_chunks = (
+    all_chunks = (
         db.query(models.TranslationChunk)
-        .filter(
-            models.TranslationChunk.translation_id == str(translation_id),
-            models.TranslationChunk.status == "COMPLETED",
-        )
+        .filter(models.TranslationChunk.translation_id == str(translation_id))
         .order_by(models.TranslationChunk.chunk_index)
         .all()
     )
 
+    # Chunks can finish out of order (parallel queues), but subtitles must
+    # only be exposed in order — stop at the first gap so a later chunk
+    # is never returned before an earlier one.
     chunks_srt = []
-    for chunk in completed_chunks:
-        if chunk.srt_path:
-            try:
-                srt_content = minio_client.read_bytes(chunk.srt_path).decode("utf-8")
-                chunks_srt.append({"chunk_index": chunk.chunk_index, "srt_content": srt_content})
-            except Exception:
-                pass
+    for chunk in all_chunks:
+        if chunk.status != "COMPLETED" or not chunk.srt_path:
+            break
+        try:
+            srt_content = minio_client.read_bytes(chunk.srt_path).decode("utf-8")
+            chunks_srt.append({"chunk_index": chunk.chunk_index, "srt_content": srt_content})
+        except Exception:
+            break
 
-    total_chunks = (
-        db.query(models.TranslationChunk)
-        .filter(models.TranslationChunk.translation_id == str(translation_id))
-        .count()
-    )
+    completed_chunks = sum(1 for chunk in all_chunks if chunk.status == "COMPLETED")
 
     return {
         "status": record.status,
-        "total_chunks": total_chunks,
-        "completed_chunks": len(completed_chunks),
+        "total_chunks": len(all_chunks),
+        "completed_chunks": completed_chunks,
         "srt_content": "\n".join(c["srt_content"] for c in chunks_srt) if record.status == "COMPLETED" else None,
         "chunks": chunks_srt,
     }
@@ -133,3 +134,59 @@ async def download_srt(
         media_type="application/x-subrip",
         headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
     )
+
+
+@router.get("/{translation_id}/source")
+async def get_video_source(
+    translation_id: uuid.UUID,
+    request: Request,
+    token: str,
+):
+    db = SessionLocal()
+    try:
+        user = decode_token(token, db)
+
+        record = db.query(models.Translation).filter(
+            models.Translation.id == str(translation_id),
+            models.Translation.user_id == user.id,
+        ).first()
+
+        if not record or record.is_youtube or not record.source_url:
+            raise HTTPException(status_code=404, detail="Video not found")
+
+        if not minio_client.object_exists(record.source_url):
+            raise HTTPException(
+                status_code=404,
+                detail="Video is no longer available (kept for 7 days after processing)",
+            )
+
+        size = minio_client.get_object_size(record.source_url)
+        content_type = mimetypes.guess_type(record.source_url)[0] or "video/mp4"
+
+        range_header = request.headers.get("range")
+        if range_header:
+            start_str, _, end_str = range_header.removeprefix("bytes=").partition("-")
+            start = int(start_str) if start_str else 0
+            end = int(end_str) if end_str else size - 1
+            end = min(end, size - 1)
+
+            chunk = minio_client.read_range(record.source_url, start, end)
+            return Response(
+                chunk,
+                status_code=206,
+                media_type=content_type,
+                headers={
+                    "Content-Range": f"bytes {start}-{end}/{size}",
+                    "Accept-Ranges": "bytes",
+                    "Content-Length": str(len(chunk)),
+                },
+            )
+
+        data = minio_client.read_bytes(record.source_url)
+        return Response(
+            data,
+            media_type=content_type,
+            headers={"Accept-Ranges": "bytes", "Content-Length": str(size)},
+        )
+    finally:
+        db.close()
